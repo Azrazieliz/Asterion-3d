@@ -91,3 +91,24 @@ views and does not recover occluded concavities. GLB pass-through preserves
 the source rig, morph, animation and material bytes with container-level
 checks. It does not import that source into Foundry's mesh editor or
 admit it to NoWorld.
+
+### Signed 0.2 APK
+
+- Source commit `abc5430f22b370df72b529bf0f54a9fb2ccd4857`.
+- Signed APK published in commit `6849d73e9ed259179efbfa2855b197c8536519fc`.
+- Package `com.asterion.foundry`, version code 2,
+  version name `0.2.0-native-depth`, ABI `arm64-v8a`.
+- SHA-256 `b9c098cef7518b636c322699c391a62fd22da4860d5f26485b5e195a718349da`.
+- Downloaded APK matched the build digest and original 0.1 signing
+  certificate. Signature, ZIP integrity, model checksum and 16 KiB
+  native library alignment passed. There is no Android Internet
+  permission in the manifest.
+- A synthetic shaded-object fixture went through the exact pinned
+  model on the host, then through Foundry's depth mesher and GLB
+  exporter. The 12,116-triangle GLB passed binary checks. The audit
+  counted zero boundary edges, nonmanifold edges, winding conflicts
+  and collapsed triangles. This checks the pipeline on one fixture.
+- Original GLB inspection read both the generated relief and a skinned
+  fixture. The latter reported its embedded skin.
+- Device execution of the updated APK and comparative visual quality
+  remain unverified. The 0.1 phone checks above apply to 0.1 only.
