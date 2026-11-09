@@ -1,5 +1,5 @@
 param([string]$Sdk="$env:LOCALAPPDATA\Android\Sdk",[string]$Java='C:\Program Files\Android\Android Studio1\jbr')
-$ErrorActionPreference='Stop'
+$ErrorActionPreference='Continue'
 $root=Split-Path $PSScriptRoot -Parent
 $src=Join-Path $root 'app\src\main'
 $build=Join-Path $root 'app\build\direct'

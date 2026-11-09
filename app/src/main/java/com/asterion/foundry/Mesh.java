@@ -24,7 +24,7 @@ public final class Mesh {
   int rings=detail,sides=detail*2;
   for(int r=0;r<rings;r++)for(int s=0;s<sides;s++){
    float[] a=point(x,y,z,rx,ry,rz,r,s,rings,sides),b=point(x,y,z,rx,ry,rz,r,s+1,rings,sides),d=point(x,y,z,rx,ry,rz,r+1,s,rings,sides),e=point(x,y,z,rx,ry,rz,r+1,s+1,rings,sides);
-   quad(a,d,e,b,c,j);
+   quad(a,b,e,d,c,j);
   }
  }
  private float[] point(float x,float y,float z,float rx,float ry,float rz,int r,int s,int rings,int sides){double p=Math.PI*r/rings,t=2*Math.PI*s/sides;return new float[]{x+rx*(float)(Math.sin(p)*Math.cos(t)),y+ry*(float)Math.cos(p),z+rz*(float)(Math.sin(p)*Math.sin(t))};}
