@@ -11,6 +11,28 @@ public final class Store extends SQLiteOpenHelper {
  public synchronized JSONObject job(String id)throws Exception{try(Cursor c=getReadableDatabase().rawQuery("SELECT * FROM jobs WHERE id=?",new String[]{id})){if(!c.moveToFirst())throw new IOException("Job not found");return row(c);}}
  JSONObject row(Cursor c)throws Exception{JSONObject o=new JSONObject();for(String s:new String[]{"id","request","state","message"})o.put(s,c.getString(c.getColumnIndexOrThrow(s)));o.put("stage",c.getInt(c.getColumnIndexOrThrow("stage")));return o;}
  public synchronized ArrayList<JSONObject> jobs()throws Exception{ArrayList<JSONObject> a=new ArrayList<>();try(Cursor c=getReadableDatabase().rawQuery("SELECT * FROM jobs ORDER BY created DESC",null)){while(c.moveToNext())a.add(row(c));}return a;}
+ public synchronized JSONObject nextQueued() throws Exception {
+  try (Cursor cursor = getReadableDatabase().rawQuery(
+      "SELECT * FROM jobs WHERE state='queued' ORDER BY created, rowid LIMIT 1", null)) {
+   return cursor.moveToFirst() ? row(cursor) : null;
+  }
+ }
+ public synchronized boolean hasQueued() {
+  try (Cursor cursor = getReadableDatabase().rawQuery("SELECT 1 FROM jobs WHERE state='queued' LIMIT 1", null)) {
+   return cursor.moveToFirst();
+  }
+ }
+ public synchronized void finish(String id, String recipe, long ms, boolean reused, JSONObject receipt) {
+  SQLiteDatabase database = getWritableDatabase();
+  database.beginTransaction();
+  try {
+   record(id, recipe, ms, reused, receipt);
+   state(id, "complete", 4, "Export ready · visual quality unvalidated" + (reused ? " · reused geometry" : ""));
+   database.setTransactionSuccessful();
+  } finally {
+   database.endTransaction();
+  }
+ }
  public synchronized void recover(){getWritableDatabase().execSQL("UPDATE jobs SET state='paused',message='Interrupted. Resume from durable checkpoint.' WHERE state='running'");}
  public synchronized void record(String id,String recipe,long ms,boolean reused,JSONObject receipt){ContentValues v=new ContentValues();v.put("job",id);v.put("recipe",recipe);v.put("duration_ms",ms);v.put("reused",reused?1:0);v.put("receipt",receipt.toString());v.put("recorded",System.currentTimeMillis());getWritableDatabase().insertOrThrow("history",null,v);}
  public String memory(){try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*),COALESCE(SUM(reused),0),COALESCE(AVG(duration_ms),0) FROM history",null)){c.moveToFirst();return c.getInt(0)+" recorded operations · "+c.getInt(1)+" cache reuses · "+c.getLong(2)+" ms average";}}

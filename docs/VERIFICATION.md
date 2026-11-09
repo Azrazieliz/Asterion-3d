@@ -50,3 +50,44 @@ The app launch request was refused by Control because its screen was not in the 
 No learned image/text geometry reconstruction, source-accurate Koikatsu extraction, mod resolution, morph editing, animation production/retargeting, multi-participant scene production, full UV unwrap/baking, region repair, reference-view scoring, collision/LOD generation, native Vulkan/QNN compute, measured backend routing, adaptive production learning, LoRA, FBX, verified TeraBox archive, or native Unreal import/cooking.
 
 The template meshes are simple disconnected primitives where applicable; rigid weights are not smooth production skinning. OBJ import accepts triangulated geometry only and does not preserve original materials/UVs/normals. Original source bytes remain intact. UVs on generated meshes are planar coordinates and may overlap; receipt marks this unchecked. Templates do not claim NoWorld painterly anime visual fidelity. Queue storage has stage recovery, not sub-stage streaming for two-hour inference jobs; no long-duration phone test has been run.
+
+## Android evidence for 0.1.0
+
+Android Settings on SM-S948B confirmed the installed version name
+`0.1.0-production-slice`. Control observed package `com.asterion.foundry`
+in the foreground and exercised Create, Queue and Projects. Production
+job `18234292-fa56-42a6-8ca3-e21f9c0888e1` reported 558 triangles,
+23 ms and GLB SHA-256
+`099ed0d87b228b66c87e22b8d004e93f1058cfb97e0a0796a641ab3d4ebcae4c`.
+Android's document picker accepted Save for `Foundry-18234292.zip`;
+the saved ZIP contents were not independently reopened.
+
+Job `377f4dfd-de09-4031-a116-fc8efb4c92ee` was observed paused with a
+saved checkpoint and later complete, reporting reuse and the identical
+GLB digest at 9 ms. Uncontrolled foreground changes prevented
+attributing this to a confirmed force-stop and relaunch. No error dialog
+was observed. The available connection could not read Foundry crash logs.
+
+## Native depth and multi-view implementation
+
+The 0.2 source adds bundled MiDaS inference, relative-depth relief,
+orthographic visual hull, reference overlap metrics, bounded topology
+analysis, immutable GLB intake, revision editing, a searchable asset
+library, source-role provenance and private process-exit diagnostics.
+Scope and engine admission still follow [SCOPE.md](SCOPE.md).
+
+Build-machine evidence:
+- The exact MiDaS model ran with LiteRT on Linux x86-64. Input and output
+  were float32 `[1,256,256,3]` and `[1,256,256]`. The tested output was finite.
+- Android source compilation used API 35 and the actual LiteRT Java API.
+- The pinned ARM64 LiteRT ELF has 16 KiB LOAD alignment.
+- The focused suite passed 16 cases and validated ten GLB files, including
+  the visual hull, closed depth relief and immutable-parent revision.
+
+The full 0.2 user acceptance suite requires running the APK on the Samsung.
+MiDaS does not provide metric depth, unseen surfaces or anatomically
+accurate character reconstruction. A hull is constrained by its supplied
+views and does not recover occluded concavities. GLB pass-through preserves
+the source rig, morph, animation and material bytes with container-level
+checks. It does not import that source into Foundry's mesh editor or
+admit it to NoWorld.

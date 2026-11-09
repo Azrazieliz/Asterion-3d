@@ -7,11 +7,17 @@ $tools=Join-Path $Sdk 'build-tools\35.0.1'
 $android=Join-Path $Sdk 'platforms\android-35\android.jar'
 $env:JAVA_HOME=$Java
 $env:PATH="$Java\bin;$env:PATH"
+$python='D:\Tools\Python311\python.exe'
+$native="$build\offline-native"
+& $python "$root\scripts\prepare_native.py" --stage $native
+if($LASTEXITCODE -ne 0){throw 'Pinned model/runtime preparation failed'}
+$jars=@(Get-ChildItem "$native\jars" -Filter '*.jar' | ForEach-Object {$_.FullName})
+$classPath=(@($android)+$jars) -join ';'
 New-Item -ItemType Directory -Force -Path "$build\classes","$build\dex","$build\host","$root\dist" | Out-Null
 $sourceFiles=@(Get-ChildItem "$src\java" -Recurse -File -Filter '*.java' | ForEach-Object {$_.FullName})
-& "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -cp $android -d "$build\classes" @sourceFiles
+& "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -cp $classPath -d "$build\classes" @sourceFiles
 if($LASTEXITCODE -ne 0){throw 'Java compilation failed'}
-$core=@('FilesUtil','Mesh','Recipes','Glb') | ForEach-Object {"$src\java\com\asterion\foundry\$_.java"}
+$core=@('FilesUtil','Mesh','Recipes','Glb','VisualHull','GeometryAudit','DepthRelief','MeshRevision') | ForEach-Object {"$src\java\com\asterion\foundry\$_.java"}
 & "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -d "$build\host" @core "$root\tests\CoreAcceptance.java"
 if($LASTEXITCODE -ne 0){throw 'Host test compilation failed'}
 Push-Location $root
@@ -22,19 +28,23 @@ if($LASTEXITCODE -ne 0){throw 'GLB validation failed'}
 Pop-Location
 & "$tools\aapt2.exe" compile --dir "$src\res" -o "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'Resources failed'}
-& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 1 --version-name '0.1.0-production-slice' "$build\res.zip"
+& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 2 --version-name '0.2.0-native-depth' -0 tflite -A "$native\assets" "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'AAPT failed'}
 $classFiles=@(Get-ChildItem "$build\classes" -Recurse -Filter '*.class' | ForEach-Object {$_.FullName})
-& "$tools\d8.bat" --release --min-api 29 --lib $android --output "$build\dex" @classFiles
+& "$tools\d8.bat" --release --min-api 29 --lib $android --output "$build\dex" @classFiles @jars
 if($LASTEXITCODE -ne 0){throw 'D8 failed'}
-& 'D:\Tools\Python311\python.exe' -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'a');z.write(sys.argv[2],'classes.dex',compress_type=zipfile.ZIP_DEFLATED);z.close()" "$build\unsigned.apk" "$build\dex\classes.dex"
+& $python "$root\scripts\pack_native_apk.py" "$build\unsigned.apk" "$build\dex" "$native\jni"
 if($LASTEXITCODE -ne 0){throw 'DEX insertion failed'}
-& "$tools\zipalign.exe" -f -p 4 "$build\unsigned.apk" "$build\aligned.apk"
+& "$tools\zipalign.exe" -f -P 16 4 "$build\unsigned.apk" "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Alignment failed'}
-$apk="$root\dist\AsterionFoundry-v0.1.0-DEV.apk"
+$apk="$root\dist\AsterionFoundry-v0.2.0-DEV.apk"
 & "$tools\apksigner.bat" sign --ks "$env:USERPROFILE\.android\debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out $apk "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Signature failed'}
 & "$tools\apksigner.bat" verify --verbose $apk
 if($LASTEXITCODE -ne 0){throw 'Signature verification failed'}
+& "$tools\zipalign.exe" -c -P 16 4 $apk
+if($LASTEXITCODE -ne 0){throw 'APK alignment verification failed'}
+& $python "$root\scripts\pack_native_apk.py" --verify $apk
+if($LASTEXITCODE -ne 0){throw 'Embedded native model verification failed'}
 Get-FileHash $apk -Algorithm SHA256
 Write-Output "BUILT_APK=$apk"

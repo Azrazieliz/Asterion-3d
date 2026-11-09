@@ -4,7 +4,7 @@
  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
  <uses-permission android:name="android.permission.WAKE_LOCK"/>
  <queries><package android:name="com.asterion.kk.test"/></queries>
- <application android:theme="@style/AppTheme" android:label="Asterion Foundry" android:allowBackup="false" android:supportsRtl="true">
+ <application android:theme="@style/AppTheme" android:label="Asterion Foundry" android:allowBackup="false" android:extractNativeLibs="false" android:supportsRtl="true">
   <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
   <service android:name=".ProductionService" android:exported="false" android:foregroundServiceType="dataSync"/>
  </application>

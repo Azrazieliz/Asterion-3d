@@ -21,3 +21,11 @@ Core checks: `bash scripts/test-core.sh` on a JDK/Python host. The build script 
 ## Not available yet
 
 AI reconstruction, full studio editing, source-accurate Koikatsu geometry/mod import, Vulkan/QNN compute, animation/morph production, visual correction, mobile optimization, adaptive learning and NoWorld-native admission. Humanoid/quadruped templates are not reconstructed characters. Silhouette extrusion is not inferred volumetric reconstruction. See the report for every acceptance distinction.
+
+## 0.2 native depth work
+
+The existing app now includes native offline MiDaS depth relief,
+multi-view visual-hull reconstruction, exact self-contained GLB
+preservation, topology measurements, non-destructive mesh revisions and a
+searchable project library. See [native model and reconstruction](docs/NATIVE_MODEL.md).
+The original full scope remains tracked in [SCOPE.md](docs/SCOPE.md).
