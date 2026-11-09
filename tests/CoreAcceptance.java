@@ -1,4 +1,6 @@
-import com.asterion.foundry.*;import java.io.*;import java.nio.*;
+import com.asterion.foundry.*;import java.io.*;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 public class CoreAcceptance {
  public static void main(String[] args)throws Exception{File dir=new File("test-output");dir.mkdirs();int count=0;for(String kind:new String[]{"Sword","Pavilion","Tree","Terrain","Humanoid template","Quadruped template"}){Mesh m=Recipes.create(kind,1,12);m.validate();if(!kind.equals("Terrain")){double volume=0;for(int i=0;i<m.vertices.size();i+=3){float[] x=m.vertices.get(i),y=m.vertices.get(i+1),z=m.vertices.get(i+2);volume+=(x[0]*(y[1]*z[2]-y[2]*z[1])+x[1]*(y[2]*z[0]-y[0]*z[2])+x[2]*(y[0]*z[1]-y[1]*z[0]))/6;}if(volume<=0)throw new AssertionError("Inward winding: "+kind);}File a=new File(dir,kind.replace(' ','_')+".mesh");m.save(a);Mesh restored=Mesh.load(a);if(restored.vertices.size()!=m.vertices.size())throw new AssertionError("Checkpoint changed geometry");File glb=new File(dir,kind.replace(' ','_')+".glb");Glb.write(restored,glb);System.out.println(kind+": "+m.vertices.size()/3+" triangles, "+m.bones.size()+" bones, "+glb.length()+" bytes");count++;}
  int[] pixels=new int[32*32];for(int y=3;y<29;y++)for(int x=13;x<19;x++)pixels[y*32+x]=0xff8877aa;Mesh image=Recipes.silhouette(pixels,32,32,1,.08f);Glb.write(image,new File(dir,"silhouette.glb"));image.validate();count++;
@@ -11,9 +13,12 @@ public class CoreAcceptance {
  System.out.println("PASS "+count+" focused core cases; Android and visual acceptance not covered.");}
  private static int reconstruction(File dir) throws Exception {
   int side = 32;
-  int[] front = new int[side*side], right = new int[side*side];
+  int[] front = new int[side*side], right = new int[side*side], back = new int[side*side];
   for (int y=4; y<28; y++) {
-   for (int x=8; x<24; x++) front[y*side+x] = 0xff82bc99;
+   for (int x=8; x<24; x++) {
+    front[y*side+x] = 0xff82bc99;
+    back[y*side+x] = 0xffba3020;
+   }
    for (int x=12; x<20; x++) right[y*side+x] = 0xff428772;
   }
   VisualHull.Result result = VisualHull.reconstruct(new VisualHull.View(front,side,side),
@@ -25,7 +30,17 @@ public class CoreAcceptance {
    throw new AssertionError("Measured hull dimensions and silhouettes disagree");
   }
   checkClosed(result.mesh());
-  Glb.write(result.mesh(), new File(dir,"multi_view.glb"));
+  checkAtlas(result, false);
+  VisualHull.Result threeViews = VisualHull.reconstruct(new VisualHull.View(front,side,side),
+          new VisualHull.View(right,side,side), new VisualHull.View(back,side,side), 1, 24, () -> {});
+  if (threeViews.backIou() != 1) throw new AssertionError("Back projection differs from the reference");
+  checkAtlas(threeViews, true);
+  int atlasSize = (int)Math.sqrt(threeViews.atlas().length);
+  BufferedImage atlas = new BufferedImage(atlasSize,atlasSize,BufferedImage.TYPE_INT_ARGB);
+  atlas.setRGB(0,0,atlasSize,atlasSize,threeViews.atlas(),0,atlasSize);
+  ByteArrayOutputStream texture = new ByteArrayOutputStream();
+  if (!ImageIO.write(atlas,"png",texture)) throw new AssertionError("PNG writer missing");
+  Glb.write(threeViews.mesh(), new File(dir,"multi_view.glb"), texture.toByteArray());
   float[] depth = new float[side*side];
   for(int y=0; y<side; y++) for(int x=0; x<side; x++) depth[y*side+x] = x + y*.5f;
   Mesh relief = DepthRelief.build(front,side,side,depth,side,1,()->{});
@@ -40,9 +55,29 @@ public class CoreAcceptance {
           || edited.vertices.get(0)[8] == result.mesh().vertices.get(0)[8]) {
    throw new AssertionError("Revision did not preserve the original or apply the edit");
   }
+  for (int i = 0; i < edited.vertices.size(); i++) {
+   for (int axis = 6; axis <= 7; axis++) {
+    if (edited.vertices.get(i)[axis] != result.mesh().vertices.get(i)[axis]) {
+     throw new AssertionError("Revision changed reference UVs");
+    }
+   }
+  }
   Glb.write(edited,new File(dir,"revision.glb"));
   System.out.println("Visual hull: "+result.occupied()+" cells, unit overlap in both reference views");
-  return 4;
+  return 5;
+ }
+ private static void checkAtlas(VisualHull.Result result, boolean hasBack) {
+  int size = (int)Math.sqrt(result.atlas().length), mapped = 0;
+  for (float[] v : result.mesh().vertices) {
+   int x = (int)(v[6]*size), y = (int)(v[7]*size);
+   int expected = 0xffffffff;
+   if (v[5] > .5f) expected = 0xff82bc99;
+   if (v[3] > .5f) expected = 0xff428772;
+   if (v[5] < -.5f && hasBack) expected = 0xffba3020;
+   if (result.atlas()[y*size+x] != expected) throw new AssertionError("Reference projected onto the wrong face");
+   if (expected != 0xffffffff) mapped++;
+  }
+  if (mapped != 3*result.texturedTriangles()) throw new AssertionError("Incorrect atlas coverage");
  }
  private static void checkClosed(Mesh mesh) throws Exception {
   GeometryAudit.Result audit = GeometryAudit.inspect(mesh,()->{});

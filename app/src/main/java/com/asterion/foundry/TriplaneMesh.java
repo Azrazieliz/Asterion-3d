@@ -99,7 +99,7 @@ final class TriplaneMesh {
         return -RADIUS+2*RADIUS*position/(cells-1);
     }
 
-    private static OrtSession open(OrtEnvironment env,File models,String name) throws Exception {
+    static OrtSession open(OrtEnvironment env,File models,String name) throws Exception {
         try (OrtSession.SessionOptions options = new OrtSession.SessionOptions()) {
             options.setIntraOpNumThreads(Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors()/2)));
             options.setInterOpNumThreads(1);
@@ -113,7 +113,7 @@ final class TriplaneMesh {
         return OnnxTensor.createTensor(env,FloatBuffer.wrap(features,0,count*120),new long[]{count,120});
     }
 
-    private static float[] floats(OrtSession.Result output,String name,int count) throws Exception {
+    static float[] floats(OrtSession.Result output,String name,int count) throws Exception {
         float[] result = new float[count];
         floats(output,name,count,result,0);
         return result;
@@ -183,6 +183,7 @@ final class TriplaneMesh {
                     alpha[y*width+x]=Math.min(1,Math.max(0,mask[(top+y*h/height)*MASK+left+x*w/width]));
                 }
             }
+            alpha = SlimSam.refine(env,models,pixels,width,height,alpha,budget).alpha();
         }
         int left=width,top=height,right=-1,bottom=-1,foreground=0;
         for(int y=0; y<height; y++) for(int x=0; x<width; x++) {

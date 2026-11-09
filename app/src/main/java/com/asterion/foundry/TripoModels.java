@@ -13,7 +13,7 @@ import java.util.zip.ZipInputStream;
 
 /** The model pack is a one-time local install. Files are pinned before promotion. */
 final class TripoModels {
-    static final String VERSION = "triposr-q8-isnet-048725e-v1";
+    static final String VERSION = "triposr-q8-isnet-slimsam-048725e-v2";
     static final String ENCODER = "triplane_q8.onnx";
     static final String WEIGHTS = "triplane_q8.onnx.data";
     static final String DECODER = "decoder.onnx";
@@ -23,7 +23,9 @@ final class TripoModels {
         new Member(ENCODER,885712,"7721f5a45e79e02de8c6e909c21fb8e922fd0b594038a8fc1cfefa42c79ad6d5"),
         new Member(WEIGHTS,483785728,"50bf9b1c1218dc2c7fb6051d0d2cb7a48a1c5f75cc86e67a9d0e09a931298e35"),
         new Member(DECODER,173796,"6ff43581f1d2b46aa61764c2729a8d33985b51cb6c8088cf36ffee3fd70355eb"),
-        new Member(SEGMENTER,176069933,"f15622d853e8260172812b657053460e20806f04b9e05147d49af7bed31a6e99")
+        new Member(SEGMENTER,176069933,"f15622d853e8260172812b657053460e20806f04b9e05147d49af7bed31a6e99"),
+        new Member(SlimSam.ENCODER,23276014,"9f8433273a6750b587779baa0cf5508111001bf7e7acfcf585d370139fd366d0"),
+        new Member(SlimSam.DECODER,16557892,"f4514391764fbd56e08e119060d874ecd7d52994bfb1968af159e12d4943b5bb")
     };
 
     static File directory(File root) { return new File(root,"models/" + VERSION); }
@@ -42,7 +44,7 @@ final class TripoModels {
         File target = directory(root);
         if (ready(root)) return;
         if (target.exists()) throw new IOException("Model installation already exists but is incomplete");
-        if (root.getUsableSpace() < 950L*1024*1024) throw new IOException("Free at least 950 MiB for the model pack");
+        if (root.getUsableSpace() < 1024L*1024*1024) throw new IOException("Free at least 1 GiB for the model pack");
         Files.createDirectories(target.toPath().getParent());
         File staging = Files.createTempDirectory(target.toPath().getParent(), "install-").toFile();
         try (ZipInputStream archive = new ZipInputStream(input)) {

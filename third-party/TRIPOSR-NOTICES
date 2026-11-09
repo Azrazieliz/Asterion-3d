@@ -5,3 +5,5 @@ The conversion contains a DINO ViT-B/16 encoder, Apache License 2.0.
 ISNet Anime model, SkyTNT, Apache License 2.0.
 https://huggingface.co/skytnt/anime-seg/tree/493cb60893f47441b26ec4fb9a306bce9e342982
 See the Apache License 2.0 text in the bundled LiteRT license assets.
+SlimSAM 77 uniform ONNX conversion, Xenova, Apache License 2.0.
+https://huggingface.co/Xenova/slimsam-77-uniform/tree/5850ab45f587c112167512ffef949107115e26a0

@@ -49,7 +49,7 @@ final class SourceFiles {
 
     Map<String, File> originals(JSONObject request) throws Exception {
         Map<String, File> result = new LinkedHashMap<>();
-        for (String role : new String[]{"source", "front", "right", "back"}) {
+        for (String role : new String[]{"source", "reference", "front", "right", "back"}) {
             String path = request.optString(role);
             if (path.isEmpty()) continue;
             File file = new File(path).getCanonicalFile();

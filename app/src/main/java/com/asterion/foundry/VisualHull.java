@@ -5,7 +5,8 @@ import java.util.Arrays;
 
 /** Bounded orthographic space carving from isolated, upright reference views. */
 public final class VisualHull {
-    public static final String METHOD = "orthographic-visual-hull-v1";
+    public static final String METHOD = "orthographic-visual-hull-with-texture-v2";
+    private static final int TILE = 512, ATLAS = 2*TILE;
 
     @FunctionalInterface
     public interface Budget {
@@ -97,7 +98,8 @@ public final class VisualHull {
     }
 
     public record Result(Mesh mesh, int occupied, int components, double frontIou,
-                         double rightIou, Double backIou, int resolution) {}
+                         double rightIou, Double backIou, int resolution, int[] atlas,
+                         int texturedTriangles) {}
 
     public static Result reconstruct(View front, View right, View back, float heightMetres,
                                      int resolution, Budget budget) throws Exception {
@@ -117,6 +119,10 @@ public final class VisualHull {
         boolean[] volume = new boolean[sx * sy * sz];
         boolean[] frontProjection = new boolean[sx * sy];
         boolean[] rightProjection = new boolean[sz * sy];
+        int[] frontDepth = new int[sx*sy], rightDepth = new int[sz*sy], backDepth = new int[sx*sy];
+        Arrays.fill(frontDepth,-1);
+        Arrays.fill(rightDepth,-1);
+        Arrays.fill(backDepth,sz);
         int occupied = 0;
         for (int y = 0; y < sy; y++) {
             budget.check();
@@ -128,6 +134,9 @@ public final class VisualHull {
                     volume[index(x, y, z, sx, sz)] = true;
                     frontProjection[y * sx + x] = true;
                     rightProjection[y * sz + (sz - 1 - z)] = true;
+                    frontDepth[y*sx+x] = Math.max(frontDepth[y*sx+x],z);
+                    backDepth[y*sx+x] = Math.min(backDepth[y*sx+x],z);
+                    rightDepth[y*sz+z] = Math.max(rightDepth[y*sz+z],x);
                     occupied++;
                 }
             }
@@ -135,6 +144,7 @@ public final class VisualHull {
         if (occupied == 0) throw new IllegalArgumentException("The references do not overlap into a volume");
 
         Mesh mesh = new Mesh();
+        int texturedTriangles = 0;
         float dx = heightMetres * (float) front.aspect() / sx;
         float dz = heightMetres * (float) right.aspect() / sz;
         float dy = heightMetres / sy;
@@ -153,9 +163,14 @@ public final class VisualHull {
                     y + 1 == sy || !volume[index(x, y + 1, z, sx, sz)],
                     y == 0 || !volume[index(x, y - 1, z, sx, sz)]
                 };
-                emit(mesh, (x - sx / 2f) * dx, (x + 1 - sx / 2f) * dx, y * dy,
+                int[] tiles = {
+                    back != null && z == backDepth[y*sx+x] ? 2 : 3,
+                    z == frontDepth[y*sx+x] ? 0 : 3,
+                    3, x == rightDepth[y*sz+z] ? 1 : 3, 3, 3
+                };
+                texturedTriangles += emit(mesh, (x - sx / 2f) * dx, (x + 1 - sx / 2f) * dx, y * dy,
                         (y + 1) * dy, (z - sz / 2f) * dz, (z + 1 - sz / 2f) * dz,
-                        faces, new int[]{b, f, f, r, f, f});
+                        faces, new int[]{b, f, f, r, f, f}, tiles, sx*dx, sy*dy, sz*dz);
             }
         }
 
@@ -166,7 +181,8 @@ public final class VisualHull {
         mesh.validate();
         return new Result(mesh, occupied, components(volume, sx, sy, sz, budget),
                 overlap(front, frontProjection, sx, sy), overlap(right, rightProjection, sz, sy),
-                back == null ? null : overlap(back, backProjection, sx, sy), resolution);
+                back == null ? null : overlap(back, backProjection, sx, sy), resolution,
+                atlas(front,right,back,budget), texturedTriangles);
     }
 
     private static int width(View view, int resolution) {
@@ -233,18 +249,59 @@ public final class VisualHull {
         {1, 2, 6, 5}, {3, 7, 6, 2}, {0, 1, 5, 4}
     };
 
-    private static void emit(Mesh mesh, float x0, float x1, float y0, float y1,
-                             float z0, float z1, boolean[] faces, int[] colors) {
-        if (!faces[0] && !faces[1] && !faces[2] && !faces[3] && !faces[4] && !faces[5]) return;
+    private static int[] atlas(View front, View right, View back, Budget budget) throws Exception {
+        int[] result = new int[ATLAS*ATLAS];
+        Arrays.fill(result,0xffffffff);
+        View[] views = {front,right,back};
+        for (int tile = 0; tile < views.length; tile++) {
+            View view = views[tile];
+            if (view == null) continue;
+            int ox=(tile%2)*TILE, oy=(tile/2)*TILE;
+            int inner = TILE-4;
+            for (int y = 0; y < TILE; y++) {
+                if ((y&63)==0) budget.check();
+                for (int x = 0; x < TILE; x++) {
+                    int u=Math.max(0,Math.min(inner-1,x-2));
+                    int v=Math.max(0,Math.min(inner-1,y-2));
+                    int pixel=view.sample(u,inner-1-v,inner,inner);
+                    result[(oy+y)*ATLAS+ox+x] = pixel == 0 ? 0xff808080 : pixel;
+                }
+            }
+        }
+        return result;
+    }
+
+    private static int emit(Mesh mesh, float x0, float x1, float y0, float y1,
+                            float z0, float z1, boolean[] faces, int[] colors, int[] tiles,
+                            float width, float height, float depth) {
+        if (!faces[0] && !faces[1] && !faces[2] && !faces[3] && !faces[4] && !faces[5]) return 0;
         float[][] points = {{x0,y0,z0}, {x1,y0,z0}, {x1,y1,z0}, {x0,y1,z0},
                             {x0,y0,z1}, {x1,y0,z1}, {x1,y1,z1}, {x0,y1,z1}};
+        int textured = 0;
         for (int i = 0; i < FACE.length; i++) {
             if (!faces[i]) continue;
             int[] face = FACE[i];
             int pixel = colors[i];
-            float[] color = {linear(pixel >>> 16), linear(pixel >>> 8), linear(pixel)};
+            int tile = tiles[i];
+            float[] color = tile < 3 ? new float[]{1,1,1}
+                    : new float[]{linear(pixel >>> 16), linear(pixel >>> 8), linear(pixel)};
+            int start = mesh.vertices.size();
             mesh.quad(points[face[0]], points[face[1]], points[face[2]], points[face[3]], color, 0);
+            if (tile < 3) textured += (mesh.vertices.size()-start)/3;
+            for (int n = start; n < mesh.vertices.size(); n++) {
+                float[] v = mesh.vertices.get(n);
+                float u = switch(tile) {
+                    case 0 -> .5f+v[0]/width;
+                    case 1 -> .5f-v[2]/depth;
+                    case 2 -> .5f-v[0]/width;
+                    default -> .5f;
+                };
+                float top = tile < 3 ? 1-v[1]/height : .5f;
+                v[6] = ((tile%2)*TILE + 2.5f + (TILE-5)*Math.max(0,Math.min(1,u)))/ATLAS;
+                v[7] = ((tile/2)*TILE + 2.5f + (TILE-5)*Math.max(0,Math.min(1,top)))/ATLAS;
+            }
         }
+        return textured;
     }
 
     static float linear(int channel) {

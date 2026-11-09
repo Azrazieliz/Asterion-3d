@@ -41,6 +41,13 @@ final class ProjectPackage {
             for (String name : new String[]{"asset.glb", "receipt.json", "import-manifest.json"}) {
                 add(zip, name, new File(directory, name));
             }
+            if (receipt.has("texture_sha256")) {
+                File texture = new File(directory, "base-color.png");
+                if (!receipt.getString("texture_sha256").equals(FilesUtil.hash(texture))) {
+                    throw new IOException("Base colour checksum does not match its receipt");
+                }
+                add(zip,"base-color.png",texture);
+            }
             Set<String> written = new HashSet<>();
             for (File file : originals.values()) {
                 if (written.add(file.getName())) add(zip, "sources/" + file.getName(), file);

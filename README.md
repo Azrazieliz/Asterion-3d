@@ -8,6 +8,10 @@ procedural generation and source preservation. The active version is
 [Reconstruction and model guide](docs/NATIVE_MODEL.md) ·
 [Verification evidence](docs/VERIFICATION.md)
 
+The source on this branch adds [reference fidelity changes and verification](docs/REFERENCE_FIDELITY.md)
+after that APK. Volumetric character reconstruction remains a preview and has
+not passed visual acceptance.
+
 ## Create and export
 
 - Select **AI depth relief** to estimate the visible surface from one

@@ -2,6 +2,8 @@ package com.asterion.foundry;
 
 import android.app.*;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import java.io.ByteArrayOutputStream;
 import android.os.*;
 import java.io.File;
 import java.io.IOException;
@@ -138,7 +140,7 @@ public final class ProductionService extends Service {
         check();
         Map<String, File> originals = new SourceFiles(store.root).originals(request);
         if (ORIGINAL_GLB.equals(kind)) {
-            preserveGlb(job, request, directory, originals.get("source"), start);
+            preserveGlb(job, request, directory, originals.get("source"), originals.get("reference"), start);
             return;
         }
         JSONObject sourceHashes = new JSONObject();
@@ -162,16 +164,23 @@ public final class ProductionService extends Service {
         File checkpointMetrics = new File(directory, "reference-metrics.json");
         File cache = new File(store.root, "cache/" + key + ".mesh");
         File cacheMetrics = new File(store.root, "cache/" + key + ".json");
+        File texture = new File(directory, "base-color.png");
+        File cacheTexture = new File(store.root, "cache/" + key + ".png");
 
         stage(id, job.getInt("stage"), "Preparing geometry");
-        Candidate candidate = readCandidate(checkpoint, checkpointMetrics, kind);
-        if (candidate == null) candidate = readCandidate(cache, cacheMetrics, kind);
+        Candidate candidate = readCandidate(checkpoint, checkpointMetrics, texture, kind);
+        if (candidate == null) candidate = readCandidate(cache, cacheMetrics, cacheTexture, kind);
         boolean reused = candidate != null;
         if (!reused) candidate = generate(request, originals, directory, key, id);
+        if (candidate.texture != null) {
+            FilesUtil.write(texture, candidate.texture);
+            candidate.metrics.put("texture_sha256", FilesUtil.hash(texture));
+        }
         FilesUtil.write(checkpointMetrics, candidate.metrics.toString(2));
         candidate.mesh.save(checkpoint);
         stage(id, 1, "Geometry checkpoint saved");
         if (!reused || !cache.isFile()) {
+            if (candidate.texture != null) FilesUtil.write(cacheTexture, candidate.texture);
             FilesUtil.write(cacheMetrics, candidate.metrics.toString(2));
             candidate.mesh.save(cache);
         }
@@ -182,7 +191,7 @@ public final class ProductionService extends Service {
         stage(id, 2, "Auditing topology and writing GLB");
         GeometryAudit.Result audit = GeometryAudit.inspect(candidate.mesh, this::check);
         File asset = new File(directory, "asset.glb");
-        Glb.write(candidate.mesh, asset);
+        Glb.write(candidate.mesh, asset, candidate.texture);
         stage(id, 3, "Writing validation receipt");
         JSONObject receipt = new JSONObject(candidate.mesh.validate())
                 .put("schema", "asterion.foundry.receipt.v1")
@@ -206,6 +215,7 @@ public final class ProductionService extends Service {
                 .put("mobile_optimization", "not_validated")
                 .put("rig_validation", VOLUME.equals(kind) ? "unrigged" : candidate.mesh.bones.isEmpty()
                         ? "not_applicable" : "hierarchy_and_normalized_rigid_weights_only");
+        if (candidate.texture != null) receipt.put("texture_sha256", candidate.metrics.getString("texture_sha256"));
         if (REVISION.equals(kind)) {
             receipt.put("parent_mesh_sha256", request.getString("parent_mesh_sha256"));
         }
@@ -216,6 +226,8 @@ public final class ProductionService extends Service {
                     .put("winding_conflicts", audit.windingConflicts())
                     .put("collapsed_triangles", audit.collapsedTriangles())
                     .put("weld_tolerance_metres", audit.toleranceMetres()));
+        } else {
+            receipt.put("topology", new JSONObject().put("status", "skipped_over_vertex_budget"));
         }
         FilesUtil.write(new File(directory, "receipt.json"), receipt.toString(2));
         FilesUtil.write(new File(directory, "import-manifest.json"), new JSONObject()
@@ -234,10 +246,14 @@ public final class ProductionService extends Service {
         }
     }
 
-    private void preserveGlb(JSONObject job, JSONObject request, File directory, File source, long start)
-            throws Exception {
+    private void preserveGlb(JSONObject job, JSONObject request, File directory, File source,
+                             File reference, long start) throws Exception {
         String id = job.getString("id");
         if (source == null) throw new IOException("Choose a self-contained original GLB");
+        if (reference != null) {
+            File matched = new ReferenceRegistry(store.root).find(reference.getName());
+            if (!source.equals(matched)) throw new IOException("Reference does not match the registered original");
+        }
         stage(id, job.getInt("stage"), "Inspecting original GLB container");
         JSONObject inventory = OriginalGlb.inspect(source);
         FilesUtil.write(new File(directory, "project.json"), request.toString(2));
@@ -261,6 +277,12 @@ public final class ProductionService extends Service {
                 .put("source_bytes_preserved", true).put("inventory", inventory)
                 .put("reused", reused).put("duration_ms", SystemClock.elapsedRealtime() - start)
                 .put("visual_quality", "UNVALIDATED").put("unreal_import_executed", false);
+        if (reference != null) {
+            receipt.put("reference_sha256", reference.getName())
+                    .put("reference_match", "exact_reference_bytes_to_registered_original")
+                    .put("association_provenance", "user_registered")
+                    .put("geometry_generated", false);
+        }
         FilesUtil.write(new File(directory, "receipt.json"), receipt.toString(2));
         FilesUtil.write(new File(directory, "import-manifest.json"), new JSONObject()
                 .put("schema", "asterion.foundry.intermediate.v1")
@@ -269,14 +291,23 @@ public final class ProductionService extends Service {
         store.finish(id, ORIGINAL_GLB, SystemClock.elapsedRealtime() - start, reused, receipt);
     }
 
-    private record Candidate(Mesh mesh, JSONObject metrics) {}
+    private record Candidate(Mesh mesh, JSONObject metrics, byte[] texture) {
+        Candidate(Mesh mesh, JSONObject metrics) { this(mesh,metrics,null); }
+    }
 
-    private static Candidate readCandidate(File mesh, File metrics, String kind) {
+    private static Candidate readCandidate(File mesh, File metrics, File texture, String kind) {
         if (!mesh.isFile() || (HULL.equals(kind) || DEPTH.equals(kind) || VOLUME.equals(kind)) && !metrics.isFile()) return null;
         try {
             JSONObject evidence = metrics.isFile()
                     ? new JSONObject(Files.readString(metrics.toPath())) : new JSONObject();
-            return new Candidate(Mesh.load(mesh), evidence);
+            if (HULL.equals(kind) && !evidence.has("texture_sha256")) return null;
+            if (VOLUME.equals(kind) && !TripoModels.VERSION.equals(evidence.optString("model_pack"))) return null;
+            byte[] image = null;
+            if (evidence.has("texture_sha256")) {
+                if (!evidence.getString("texture_sha256").equals(FilesUtil.hash(texture))) return null;
+                image = Files.readAllBytes(texture.toPath());
+            }
+            return new Candidate(Mesh.load(mesh), evidence, image);
         } catch (Exception damaged) {
             return null;
         }
@@ -331,7 +362,19 @@ public final class ProductionService extends Service {
                     .put("back", result.backIou() == null ? JSONObject.NULL : result.backIou())
                     .put("height_cells", result.resolution())
                     .put("occupied_cells", result.occupied()).put("components_6", result.components());
-            return new Candidate(result.mesh(), metrics);
+            int size = (int) Math.sqrt(result.atlas().length);
+            Bitmap atlas = Bitmap.createBitmap(result.atlas(),size,size,Bitmap.Config.ARGB_8888);
+            try {
+                ByteArrayOutputStream png = new ByteArrayOutputStream();
+                if (!atlas.compress(Bitmap.CompressFormat.PNG,100,png)) {
+                    throw new IOException("Reference atlas could not be encoded");
+                }
+                metrics.put("textured_triangles", result.texturedTriangles())
+                        .put("texture_size", size).put("material", "projected_reference_base_color");
+                return new Candidate(result.mesh(), metrics, png.toByteArray());
+            } finally {
+                atlas.recycle();
+            }
         }
         if (REVISION.equals(kind)) {
             String parent = request.getString("parent");
@@ -343,9 +386,19 @@ public final class ProductionService extends Service {
                 throw new IOException("Revision parent checksum changed");
             }
             JSONArray axes = request.getJSONArray("axes");
+            JSONObject parentReceipt = new JSONObject(Files.readString(
+                    new File(store.project(parent),"receipt.json").toPath()));
+            byte[] texture = null;
+            if (parentReceipt.has("texture_sha256")) {
+                File originalTexture = new File(store.project(parent),"base-color.png");
+                if (!parentReceipt.getString("texture_sha256").equals(FilesUtil.hash(originalTexture))) {
+                    throw new IOException("Revision parent texture failed checksum verification");
+                }
+                texture = Files.readAllBytes(originalTexture.toPath());
+            }
             return new Candidate(MeshRevision.apply(Mesh.load(mesh), (float) axes.getDouble(0),
                     (float) axes.getDouble(1), (float) axes.getDouble(2),
-                    request.has("color") ? request.getInt("color") : null), new JSONObject());
+                    request.has("color") ? request.getInt("color") : null), new JSONObject(), texture);
         }
         if ("Image silhouette".equals(kind)) {
             SourceFiles.Raster image = SourceFiles.decode(files.get("source"), 96);
