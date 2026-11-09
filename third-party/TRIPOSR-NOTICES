@@ -1,0 +1,7 @@
+TripoSR by Stability AI and Tripo AI, MIT license. See TRIPOSR-LICENSE.
+Quantized conversion, cgb/triposr-onnx-webgpu, commit 048725e957f485cc6bc082a9d6a239fcf7d8880a.
+https://huggingface.co/cgb/triposr-onnx-webgpu/tree/048725e957f485cc6bc082a9d6a239fcf7d8880a
+The conversion contains a DINO ViT-B/16 encoder, Apache License 2.0.
+ISNet Anime model, SkyTNT, Apache License 2.0.
+https://huggingface.co/skytnt/anime-seg/tree/493cb60893f47441b26ec4fb9a306bce9e342982
+See the Apache License 2.0 text in the bundled LiteRT license assets.

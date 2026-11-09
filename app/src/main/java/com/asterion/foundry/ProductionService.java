@@ -22,6 +22,7 @@ public final class ProductionService extends Service {
     private volatile String current;
     private int latestStart;
     static final String ORIGINAL_GLB = "Preserve original GLB";
+    static final String VOLUME = "Image to 3D candidate";
     static final String DEPTH = "AI depth relief";
     static final String HULL = "Multi-view reconstruction";
     static final String REVISION = "Mesh revision";
@@ -148,6 +149,7 @@ public final class ProductionService extends Service {
             signature.append('|').append(original.getKey()).append('=').append(hash);
             sourceHashes.put(original.getKey(), hash);
         }
+        if (VOLUME.equals(kind)) signature.append("|").append(TripoModels.VERSION);
         if (DEPTH.equals(kind)) signature.append("|depth-relief-v1|").append(MidasDepth.SHA256);
         if (HULL.equals(kind)) signature.append('|').append(VisualHull.METHOD);
         if (REVISION.equals(kind)) {
@@ -165,7 +167,7 @@ public final class ProductionService extends Service {
         Candidate candidate = readCandidate(checkpoint, checkpointMetrics, kind);
         if (candidate == null) candidate = readCandidate(cache, cacheMetrics, kind);
         boolean reused = candidate != null;
-        if (!reused) candidate = generate(request, originals);
+        if (!reused) candidate = generate(request, originals, directory, key, id);
         FilesUtil.write(checkpointMetrics, candidate.metrics.toString(2));
         candidate.mesh.save(checkpoint);
         stage(id, 1, "Geometry checkpoint saved");
@@ -192,7 +194,9 @@ public final class ProductionService extends Service {
                 .put("cache_key", key).put("reused", reused)
                 .put("duration_ms", SystemClock.elapsedRealtime() - start)
                 .put("thermal_status", getSystemService(PowerManager.class).getCurrentThermalStatus())
-                .put("outcome", "complete").put("backend", "Android CPU / ART")
+                .put("outcome", VOLUME.equals(kind) ? "candidate" : "complete")
+                .put("backend", VOLUME.equals(kind) ? "ONNX Runtime ARM64 CPU" : "Android CPU / ART")
+                .put("production_export_admitted", !VOLUME.equals(kind))
                 .put("vulkan_compute", "not_implemented").put("qnn", "not_implemented")
                 .put("unreal_import_executed", false).put("noworld_binding", "unbound")
                 .put("visual_quality", "UNVALIDATED")
@@ -200,7 +204,7 @@ public final class ProductionService extends Service {
                 .put("production_method", method(kind))
                 .put("source_appearance_preserved", false)
                 .put("mobile_optimization", "not_validated")
-                .put("rig_validation", candidate.mesh.bones.isEmpty()
+                .put("rig_validation", VOLUME.equals(kind) ? "unrigged" : candidate.mesh.bones.isEmpty()
                         ? "not_applicable" : "hierarchy_and_normalized_rigid_weights_only");
         if (REVISION.equals(kind)) {
             receipt.put("parent_mesh_sha256", request.getString("parent_mesh_sha256"));
@@ -223,7 +227,11 @@ public final class ProductionService extends Service {
                 .put("manifestation_id", JSONObject.NULL).put("native_acceptance", false)
                 .put("warnings", new JSONArray().put("NoWorld adapter has not admitted this asset"))
                 .toString(2));
-        store.finish(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
+        if (VOLUME.equals(kind)) {
+            store.finishCandidate(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
+        } else {
+            store.finish(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
+        }
     }
 
     private void preserveGlb(JSONObject job, JSONObject request, File directory, File source, long start)
@@ -264,7 +272,7 @@ public final class ProductionService extends Service {
     private record Candidate(Mesh mesh, JSONObject metrics) {}
 
     private static Candidate readCandidate(File mesh, File metrics, String kind) {
-        if (!mesh.isFile() || (HULL.equals(kind) || DEPTH.equals(kind)) && !metrics.isFile()) return null;
+        if (!mesh.isFile() || (HULL.equals(kind) || DEPTH.equals(kind) || VOLUME.equals(kind)) && !metrics.isFile()) return null;
         try {
             JSONObject evidence = metrics.isFile()
                     ? new JSONObject(Files.readString(metrics.toPath())) : new JSONObject();
@@ -274,10 +282,31 @@ public final class ProductionService extends Service {
         }
     }
 
-    private Candidate generate(JSONObject request, Map<String, File> files) throws Exception {
+    private Candidate generate(JSONObject request, Map<String, File> files, File directory, String key, String id) throws Exception {
         String kind = request.getString("kind");
         float scale = (float) request.getDouble("scale");
         int detail = request.getInt("detail");
+        if (VOLUME.equals(kind)) {
+            if (!TripoModels.ready(store.root)) throw new IOException("Install the pinned 3D model pack first");
+            ActivityManager.MemoryInfo available = new ActivityManager.MemoryInfo();
+            getSystemService(ActivityManager.class).getMemoryInfo(available);
+            if (available.availMem < 3L * 1024 * 1024 * 1024) {
+                throw new Paused("3D reconstruction requires at least 3 GiB available RAM");
+            }
+            File workspace = new File(directory, "volume-" + key);
+            Files.createDirectories(workspace.toPath());
+            SourceFiles.Raster input = SourceFiles.decode(files.get("source"), 1024);
+            TriplaneMesh.Result result = TriplaneMesh.reconstruct(TripoModels.directory(store.root), workspace,
+                    input.pixels(), input.width(), input.height(), detail, scale, this::check,
+                    message -> store.state(id, "running", 0, message));
+            return new Candidate(result.mesh(), new JSONObject()
+                    .put("method", "learned_triplane_density")
+                    .put("model_pack", TripoModels.VERSION).put("grid_resolution", result.cells())
+                    .put("generation_ms", result.millis()).put("inferred_occluded_geometry", true)
+                    .put("triplane_checkpoint_reused", result.reusedPlanes())
+                    .put("density_checkpoint_reused", result.reusedField())
+                    .put("reference_fidelity", "unverified").put("independent_character_parts", false));
+        }
         if (DEPTH.equals(kind)) {
             SourceFiles.Raster input = SourceFiles.decode(files.get("source"), 384);
             new VisualHull.View(input.pixels(), input.width(), input.height());
@@ -334,6 +363,7 @@ public final class ProductionService extends Service {
     private static String method(String kind) {
         return switch (kind) {
             case HULL -> VisualHull.METHOD;
+            case VOLUME -> "triposr_volume_surface_vertex_colour";
             case DEPTH -> "midas_relative_depth_relief_v1";
             case REVISION -> "non_destructive_mesh_revision";
             case "Image silhouette" -> "deterministic_2_5d_extrusion";

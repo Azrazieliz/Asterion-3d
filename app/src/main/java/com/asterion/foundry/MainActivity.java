@@ -3,7 +3,7 @@ import android.app.*;import android.content.*;import android.content.pm.*;import
 public final class MainActivity extends Activity {
  final int BG=0xff10141e,PANEL=0xff1b2432,INK=0xffeff5f7,MUTED=0xffa7b6c8,ACCENT=0xff83e5c6;
  Store store;LinearLayout body;TextView status;Spinner kind;EditText prompt,scale;String source="",page="Create",exportId, nextRecipe, filter=""; final Map<String,String> references = new LinkedHashMap<>();MeshView preview;Handler handler=new Handler();boolean visible;
- final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Quadruped template","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.HULL,ProductionService.DEPTH};
+ final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Quadruped template","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME};
  public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}if(!ProductionService.active)store.recover();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show("Create");if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
@@ -49,6 +49,10 @@ public final class MainActivity extends Activity {
        control.setTag(role);
       }
      } else if (needsOriginal(selected)) {
+      if (ProductionService.VOLUME.equals(selected)) {
+       label("Local volumetric reconstruction candidate. Occluded geometry is inferred. Fidelity and rigging are unverified.");
+       if (!TripoModels.ready(store.root)) button("Install offline 3D model pack", () -> pick(20, "*/*"));
+      }
       if (ProductionService.DEPTH.equals(selected)) {
        label("Bundled MiDaS estimates the visible surface. Output has a flat backing and relative depth.");
       }
@@ -70,7 +74,7 @@ public final class MainActivity extends Activity {
 
  private static boolean needsOriginal(String recipe) {
   return "Image silhouette".equals(recipe) || "OBJ geometry".equals(recipe)
-          || ProductionService.DEPTH.equals(recipe) || ProductionService.ORIGINAL_GLB.equals(recipe);
+          || ProductionService.VOLUME.equals(recipe) || ProductionService.DEPTH.equals(recipe) || ProductionService.ORIGINAL_GLB.equals(recipe);
  }
 
  private String viewLabel(String role) {
@@ -101,6 +105,9 @@ public final class MainActivity extends Activity {
     else throw new IllegalArgumentException("Choose a production method or describe a supported recipe");
 
    }
+   if (ProductionService.VOLUME.equals(selected) && !TripoModels.ready(store.root)) {
+    throw new IllegalArgumentException("Install the offline 3D model pack before reconstruction");
+   }
    if (needsOriginal(selected) && source.isEmpty()) {
     throw new IllegalArgumentException("Choose an original file first");
    }
@@ -113,7 +120,7 @@ public final class MainActivity extends Activity {
     throw new IllegalArgumentException("Use a size between 0.01 and 100");
    }
    JSONObject request = new JSONObject().put("kind", selected).put("description", name)
-           .put("scale", value).put("detail", ProductionService.HULL.equals(selected) ? 40 : 12)
+           .put("scale", value).put("detail", ProductionService.VOLUME.equals(selected) ? 112 : ProductionService.HULL.equals(selected) ? 40 : 12)
            .put("source", needsOriginal(selected) ? source : "").put("pauseAfterGeometry", pause);
    if (ProductionService.HULL.equals(selected)) {
     for (Map.Entry<String,String> reference : references.entrySet()) {
@@ -304,6 +311,19 @@ public final class MainActivity extends Activity {
   String exporting = exportId;
   new Thread(() -> {
    try {
+    if (code == 20) {
+     try (InputStream input = getContentResolver().openInputStream(uri)) {
+      TripoModels.install(store.root,input);
+     }
+     runOnUiThread(() -> {
+      if ("Create".equals(page)) {
+       nextRecipe = ProductionService.VOLUME;
+       show("Create");
+      }
+      Toast.makeText(this, "Verified 3D models installed", Toast.LENGTH_LONG).show();
+     });
+     return;
+    }
     if (code == 2) {
      try (OutputStream output = getContentResolver().openOutputStream(uri)) {
       if (output == null) throw new IOException("Cannot open the selected destination");

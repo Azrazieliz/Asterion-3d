@@ -8,7 +8,19 @@ import urllib.request
 import zipfile
 
 MODEL = "midas_small_256_fp16.tflite"
+ORT = "onnxruntime-android-1.31.1"
 FILES = {
+    "ONNXRUNTIME-THIRD-PARTY": (
+        "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.31.1/ThirdPartyNotices.txt",
+        "143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3",
+        1024 * 1024,
+    ),
+    ORT + ".aar": (
+        "https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/"
+        "1.31.1/onnxruntime-android-1.31.1.aar",
+        "d4d50660300ed2c4f38ffdfd5ab5bfa3a22f995f282dda24f42ea3ea55467b49",
+        64 * 1024 * 1024,
+    ),
     MODEL: (
         "https://huggingface.co/litert-community/MiDaS-small/resolve/"
         "b6f24f361d9e1bce8f33e970aebcb9e5e2d1a12c/" + MODEL,
@@ -79,7 +91,17 @@ def main():
             if artifact.startswith("litert-1."):
                 library = "arm64-v8a/libtensorflowlite_jni.so"
                 (stage / "jni" / library).write_bytes(archive.read("jni/" + library))
-    print(f"Prepared {MODEL} and LiteRT ARM64 with pinned SHA-256 hashes")
+    with zipfile.ZipFile(obtain(cache, ORT + ".aar")) as archive:
+        (stage / "jars" / (ORT + ".jar")).write_bytes(archive.read("classes.jar"))
+        for name in ("libonnxruntime.so", "libonnxruntime4j_jni.so"):
+            path = "arm64-v8a/" + name
+            (stage / "jni" / path).write_bytes(archive.read("jni/" + path))
+    shutil.copyfile(obtain(cache, "ONNXRUNTIME-THIRD-PARTY"),
+                    stage / "assets/licenses/ONNXRUNTIME-THIRD-PARTY")
+    for name in ("ONNXRUNTIME-LICENSE", "TRIPOSR-LICENSE", "TRIPOSR-NOTICES"):
+        shutil.copyfile(Path(__file__).resolve().parents[1] / "third-party" / name,
+                        stage / "assets/licenses" / name)
+    print(f"Prepared {MODEL}, LiteRT and ONNX Runtime ARM64 with pinned SHA-256 hashes")
 
 
 if __name__ == "__main__":

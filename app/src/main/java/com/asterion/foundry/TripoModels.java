@@ -1,0 +1,84 @@
+package com.asterion.foundry;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+/** The model pack is a one-time local install. Files are pinned before promotion. */
+final class TripoModels {
+    static final String VERSION = "triposr-q8-isnet-048725e-v1";
+    static final String ENCODER = "triplane_q8.onnx";
+    static final String WEIGHTS = "triplane_q8.onnx.data";
+    static final String DECODER = "decoder.onnx";
+    static final String SEGMENTER = "isnetis.onnx";
+    private record Member(String name, long bytes, String sha256) {}
+    private static final Member[] MEMBERS = {
+        new Member(ENCODER,885712,"7721f5a45e79e02de8c6e909c21fb8e922fd0b594038a8fc1cfefa42c79ad6d5"),
+        new Member(WEIGHTS,483785728,"50bf9b1c1218dc2c7fb6051d0d2cb7a48a1c5f75cc86e67a9d0e09a931298e35"),
+        new Member(DECODER,173796,"6ff43581f1d2b46aa61764c2729a8d33985b51cb6c8088cf36ffee3fd70355eb"),
+        new Member(SEGMENTER,176069933,"f15622d853e8260172812b657053460e20806f04b9e05147d49af7bed31a6e99")
+    };
+
+    static File directory(File root) { return new File(root,"models/" + VERSION); }
+
+    static boolean ready(File root) {
+        File location = directory(root);
+        for (Member member : MEMBERS) {
+            File file = new File(location,member.name);
+            if (!file.isFile() || file.length() != member.bytes) return false;
+        }
+        return true;
+    }
+
+    static synchronized void install(File root, InputStream input) throws Exception {
+        if (input == null) throw new IOException("No model archive was opened");
+        File target = directory(root);
+        if (ready(root)) return;
+        if (target.exists()) throw new IOException("Model installation already exists but is incomplete");
+        if (root.getUsableSpace() < 950L*1024*1024) throw new IOException("Free at least 950 MiB for the model pack");
+        Files.createDirectories(target.toPath().getParent());
+        File staging = Files.createTempDirectory(target.toPath().getParent(), "install-").toFile();
+        try (ZipInputStream archive = new ZipInputStream(input)) {
+            Set<String> found = new HashSet<>();
+            byte[] data = new byte[1024*1024];
+            for (ZipEntry entry; (entry = archive.getNextEntry()) != null;) {
+                Member member = member(entry.getName());
+                if (entry.isDirectory() || member == null || !found.add(member.name)) {
+                    throw new IOException("Unexpected model archive member");
+                }
+                File output = new File(staging,member.name);
+                long length = 0;
+                try (FileOutputStream stream = new FileOutputStream(output)) {
+                    for (int n; (n=archive.read(data)) != -1;) {
+                        length += n;
+                        if (length > member.bytes) throw new IOException("Oversized model: " + member.name);
+                        stream.write(data,0,n);
+                    }
+                    stream.getFD().sync();
+                }
+                if (length != member.bytes || !FilesUtil.hash(output).equals(member.sha256)) {
+                    throw new IOException("Model checksum mismatch: " + member.name);
+                }
+                archive.closeEntry();
+            }
+            if (found.size()!=MEMBERS.length) throw new IOException("Model archive is incomplete");
+            Files.move(staging.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            File[] partials = staging.listFiles();
+            if (partials != null) for (File partial : partials) Files.deleteIfExists(partial.toPath());
+            Files.deleteIfExists(staging.toPath());
+        }
+    }
+
+    private static Member member(String name) {
+        for (Member member : MEMBERS) if (member.name.equals(name)) return member;
+        return null;
+    }
+}

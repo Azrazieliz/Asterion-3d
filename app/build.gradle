@@ -5,7 +5,8 @@ def python = providers.gradleProperty('foundryPython').orElse(
         System.getProperty('os.name').startsWith('Windows') ? 'python' : 'python3')
 
 tasks.register('prepareOfflineModel', Exec) {
-    inputs.files(rootProject.file('scripts/prepare_native.py'), rootProject.file('third-party/MIDAS-LICENSE'))
+    inputs.file(rootProject.file('scripts/prepare_native.py'))
+    inputs.dir(rootProject.file('third-party'))
     outputs.dir(nativeStage)
     commandLine python.get(), rootProject.file('scripts/prepare_native.py'),
             '--stage', nativeStage.get().asFile
@@ -18,8 +19,8 @@ android {
         applicationId 'com.asterion.foundry'
         minSdk 29
         targetSdk 35
-        versionCode 2
-        versionName '0.2.0-native-depth'
+        versionCode 3
+        versionName '0.3.0-volume-research'
         ndk { abiFilters 'arm64-v8a' }
     }
     compileOptions {
@@ -33,6 +34,7 @@ android {
 }
 dependencies {
     implementation files(nativeStage.map { it.file('jars/litert-1.4.2.jar') },
-            nativeStage.map { it.file('jars/litert-api-1.4.2.jar') })
+            nativeStage.map { it.file('jars/litert-api-1.4.2.jar') },
+            nativeStage.map { it.file('jars/onnxruntime-android-1.31.1.jar') })
 }
 tasks.named('preBuild').configure { dependsOn 'prepareOfflineModel' }

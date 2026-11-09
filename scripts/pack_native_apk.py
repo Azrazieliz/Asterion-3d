@@ -14,6 +14,9 @@ if sys.argv[1] == "--verify":
         lib = apk.getinfo("lib/arm64-v8a/libtensorflowlite_jni.so")
         assert lib.compress_type == zipfile.ZIP_STORED, "JNI entry must support direct loading"
         assert apk.read(lib)[:4] == b"\x7fELF", "ARM64 library is not ELF"
+        for name in ("libonnxruntime.so", "libonnxruntime4j_jni.so"):
+            library = apk.getinfo("lib/arm64-v8a/" + name)
+            assert library.compress_type == zipfile.ZIP_STORED and apk.read(library)[:4] == b"\x7fELF"
         assert "classes.dex" in apk.namelist()
     print("Verified embedded model bytes, ARM64 JNI, and APK integrity")
 else:

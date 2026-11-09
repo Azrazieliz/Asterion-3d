@@ -23,11 +23,19 @@ public final class Store extends SQLiteOpenHelper {
   }
  }
  public synchronized void finish(String id, String recipe, long ms, boolean reused, JSONObject receipt) {
+  finish(id, recipe, ms, reused, receipt, "complete",
+          "Export ready · visual quality unvalidated" + (reused ? " · reused geometry" : ""));
+ }
+ public synchronized void finishCandidate(String id, String recipe, long ms, boolean reused, JSONObject receipt) {
+  finish(id, recipe, ms, reused, receipt, "candidate", "Preview only · reference fidelity and rigging unverified");
+ }
+ private void finish(String id, String recipe, long ms, boolean reused, JSONObject receipt,
+                     String outcome, String message) {
   SQLiteDatabase database = getWritableDatabase();
   database.beginTransaction();
   try {
    record(id, recipe, ms, reused, receipt);
-   state(id, "complete", 4, "Export ready · visual quality unvalidated" + (reused ? " · reused geometry" : ""));
+   state(id, outcome, 4, message);
    database.setTransactionSuccessful();
   } finally {
    database.endTransaction();
