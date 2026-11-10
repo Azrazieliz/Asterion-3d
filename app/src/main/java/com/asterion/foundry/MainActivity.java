@@ -4,9 +4,10 @@ public final class MainActivity extends Activity {
  final int BG=0xff10141e,PANEL=0xff1b2432,INK=0xffeff5f7,MUTED=0xffa7b6c8,ACCENT=0xff83e5c6;
  Store store;LinearLayout body;TextView status;Spinner kind;EditText prompt,scale;String source="",page="Create",exportId, nextRecipe, filter=""; final Map<String,String> references = new LinkedHashMap<>();MeshView preview;Handler handler=new Handler();boolean visible;
  static final String KNOWN = "Find registered original";
+ static final String HUMAN_REFERENCE = "Character reference candidate";
  String bindingReference, handoffProfile;
  Button motionPlaybackButton;
- final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Quadruped template","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME,KNOWN};
+ final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Quadruped template","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
  public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}if(!ProductionService.active)store.recover();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show("Create");if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
@@ -53,8 +54,9 @@ public final class MainActivity extends Activity {
       }
      } else if (needsOriginal(selected)) {
       if (KNOWN.equals(selected)) label("Reuse the original GLB registered to these exact image bytes.");
-      if (ProductionService.VOLUME.equals(selected)) {
+      if (ProductionService.VOLUME.equals(selected) || HUMAN_REFERENCE.equals(selected)) {
        label("Local volumetric reconstruction candidate. Occluded geometry is inferred. Fidelity and rigging are unverified.");
+       if (HUMAN_REFERENCE.equals(selected)) label("Check which human joints the reference supports. Low-confidence joints stay unobserved.");
        if (!TripoModels.ready(store.root)) button("Install offline 3D model pack", () -> pick(20, "*/*"));
       }
       if (ProductionService.DEPTH.equals(selected)) {
@@ -81,7 +83,7 @@ public final class MainActivity extends Activity {
  }
 
  private static boolean needsOriginal(String recipe) {
-  return KNOWN.equals(recipe) || "Image silhouette".equals(recipe) || "OBJ geometry".equals(recipe)
+  return KNOWN.equals(recipe) || HUMAN_REFERENCE.equals(recipe) || "Image silhouette".equals(recipe) || "OBJ geometry".equals(recipe)
           || ProductionService.VOLUME.equals(recipe) || ProductionService.DEPTH.equals(recipe) || originalGlbMode(recipe);
  }
 
@@ -111,6 +113,8 @@ public final class MainActivity extends Activity {
  void submit(boolean pause) {
   try {
    String selected = (String) kind.getSelectedItem();
+   boolean humanReference = HUMAN_REFERENCE.equals(selected);
+   if (humanReference) selected = ProductionService.VOLUME;
    String name = prompt.getText().toString().trim();
    String description = name.toLowerCase(Locale.ROOT);
    if ("Route from description".equals(selected)) {
@@ -148,6 +152,7 @@ public final class MainActivity extends Activity {
    JSONObject request = new JSONObject().put("kind", selected).put("description", name)
            .put("scale", value).put("detail", ProductionService.VOLUME.equals(selected) ? 112 : ProductionService.HULL.equals(selected) ? 40 : 12)
            .put("source", needsOriginal(selected) ? source : "").put("pauseAfterGeometry", pause);
+   if (humanReference) request.put("human_reference",true);
    if (ProductionService.HULL.equals(selected)) {
     for (Map.Entry<String,String> reference : references.entrySet()) {
      request.put(reference.getKey(), reference.getValue());
@@ -171,6 +176,7 @@ public final class MainActivity extends Activity {
 
  private void studio() {
   label("Character and creature");
+  studioRecipe(HUMAN_REFERENCE);
   studioRecipe(ProductionService.HULL);
   studioRecipe("Humanoid template");
   studioRecipe("Quadruped template");
@@ -191,7 +197,7 @@ public final class MainActivity extends Activity {
   button("Register reference and original GLB", () -> pick(21,"image/*"));
   button("Save shared form rules", () -> formEditor("", null));
   for (FormLibrary.Profile profile : new FormLibrary(store.root).available("")) {
-   button(profile.name() + " · rules v" + profile.revision(), () -> formEditor("", profile));
+   button(profile.name() + " · rules v" + profile.revision(), () -> manageForm(profile));
   }
   EditText search = new EditText(this);
   search.setHint("Search completed assets");
@@ -217,7 +223,7 @@ public final class MainActivity extends Activity {
   if (matches == 0) label("No matching completed assets");
  }
  void startQueue(){try{startForegroundService(new Intent(this,ProductionService.class));}catch(Exception e){error(e);}}
- void projects(boolean queue)throws Exception{label(queue?"Stages reflect completed writes. Interrupted jobs keep their geometry checkpoints.":"Editable projects and export packages. Sources remain immutable.");if(queue){button("Run queued jobs",this::startQueue);button("Pause after current stage",()->{if(ProductionService.active)startService(new Intent(this,ProductionService.class).setAction("pause"));});}button("Refresh",()->show(page));ArrayList<JSONObject> jobs=store.jobs();if(jobs.isEmpty())label("No projects yet. Create an asset to begin.");for(JSONObject j:jobs){JSONObject q=new JSONObject(j.getString("request"));String id=j.getString("id"),state=j.getString("state");body.addView(text(q.getString("kind"),21,INK));label(state.toUpperCase(Locale.ROOT)+" · "+j.getString("message"));if(!q.optString("description").isEmpty())label(q.optString("description"));if(state.equals("paused")||state.equals("failed"))button("Resume "+id.substring(0,6),()->{store.state(id,"queued",j.optInt("stage"),"Resume requested");startQueue();show("Queue");});if(new File(store.project(id),"checkpoint.mesh").exists())button("Inspect asset",()->inspect(id));if(state.equals("complete")){if(originalGlbMode(q.optString("kind")))button("Inspect source inventory",()->inspect(id));button("Export editable package",()->{exportId=id;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.putExtra(Intent.EXTRA_TITLE,"Foundry-"+id.substring(0,8)+".zip");startActivityForResult(i,2);});button("Repeat using saved recipe",()->{try{store.enqueue(q);startQueue();show("Queue");}catch(Exception e){error(e);}});}label("────────────────────────");}}
+ void projects(boolean queue)throws Exception{label(queue?"Stages reflect completed writes. Interrupted jobs keep their geometry checkpoints.":"Editable projects and export packages. Sources remain immutable.");if(queue){button("Run queued jobs",this::startQueue);button("Pause after current stage",()->{if(ProductionService.active)startService(new Intent(this,ProductionService.class).setAction("pause"));});}button("Refresh",()->show(page));ArrayList<JSONObject> jobs=store.jobs();if(jobs.isEmpty())label("No projects yet. Create an asset to begin.");for(JSONObject j:jobs){JSONObject q=new JSONObject(j.getString("request"));String id=j.getString("id"),state=j.getString("state");body.addView(text(q.getString("kind"),21,INK));label(state.toUpperCase(Locale.ROOT)+" · "+j.getString("message"));if(!q.optString("description").isEmpty())label(q.optString("description"));if(state.equals("paused")||state.equals("failed"))button("Resume "+id.substring(0,6),()->{store.state(id,"queued",j.optInt("stage"),"Resume requested");startQueue();show("Queue");});if(new File(store.project(id),"checkpoint.mesh").exists())button("Inspect asset",()->inspect(id));if(state.equals("complete")){if(originalGlbMode(q.optString("kind"))||ProductionService.MATERIAL_VARIANT.equals(q.optString("kind")))button("Inspect GLB receipt",()->inspect(id));button("Export editable package",()->{exportId=id;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.putExtra(Intent.EXTRA_TITLE,"Foundry-"+id.substring(0,8)+".zip");startActivityForResult(i,2);});button("Repeat using saved recipe",()->{try{store.enqueue(q);startQueue();show("Queue");}catch(Exception e){error(e);}});}label("────────────────────────");}}
  void inspect(String id) {
   try {
    if (preview != null) { preview.onPause(); preview = null; }
@@ -225,9 +231,14 @@ public final class MainActivity extends Activity {
    File directory = store.project(id);
    if (!new File(directory, "checkpoint.mesh").isFile()) {
     body.removeAllViews();
-    body.addView(text("Preserved source inventory",28,INK));
+    JSONObject input = new JSONObject(store.job(id).getString("request"));
+    body.addView(text(ProductionService.MATERIAL_VARIANT.equals(input.getString("kind"))
+            ? "Material variant receipt" : "Preserved source inventory",28,INK));
     label(java.nio.file.Files.readString(new File(directory,"receipt.json").toPath()));
-    button("Export original package", () -> export(id));
+    if (originalGlbMode(input.getString("kind"))) {
+     button("Create a material variant", () -> chooseOriginalMaterial(input.optString("source")));
+    }
+    button("Export GLB package", () -> export(id));
     button("Back to projects", () -> show("Projects"));
     return;
    }
@@ -268,7 +279,10 @@ public final class MainActivity extends Activity {
      String baseSha = receipt.getString("editable_mesh_sha256");
      String formScope = FilesUtil.hash(id + "|" + baseSha);
      button("Create a form from saved rules", () -> chooseForm(id, baseSha, formScope, request.optString("description")));
-     button("Save form rules for this base", () -> formEditor(formScope, null));
+     button("Manage form rules for this base", () -> manageBaseForms(formScope));
+     if (ProductionService.FORM.equals(request.getString("kind"))) {
+      button("Prefer these settings on the original base", () -> preferForm(request));
+     }
      button("Create animation", () -> motionDialog(id,baseSha,null));
      if (motion != null) {
       String editable = motionScript;
@@ -299,17 +313,47 @@ public final class MainActivity extends Activity {
   startActivityForResult(intent,2);
  }
 
+ private void chooseOriginalMaterial(String sourcePath) {
+  new Thread(() -> {
+   try {
+    List<String> names = OriginalMaterialVariant.editableNames(new File(sourcePath));
+    if (names.isEmpty()) throw new IOException("No uniquely named editable materials were found in this GLB");
+    runOnUiThread(() -> new AlertDialog.Builder(this).setTitle("Choose a source material")
+            .setItems(names.toArray(new String[0]),(dialog,item) -> tintDialog(sourcePath,names.get(item))).show());
+   } catch (Exception failure) { runOnUiThread(() -> error(failure)); }
+  }).start();
+ }
+
+ private void tintDialog(String sourcePath, String material) {
+  EditText tint = new EditText(this);
+  tint.setSingleLine(true);
+  tint.setHint("Tint #RRGGBB");
+  AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Tint " + material)
+          .setMessage("Multiplies the chosen material’s colour. The original rig, morphs, textures and animations are preserved.")
+          .setView(tint).setNegativeButton("Cancel",null).setPositiveButton("Create variant",null).create();
+  dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+   try {
+    String rgb = tint.getText().toString().trim();
+    if (!rgb.matches("#[0-9a-fA-F]{6}")) throw new IllegalArgumentException("Use #RRGGBB for tint");
+    enqueue(new JSONObject().put("kind",ProductionService.MATERIAL_VARIANT).put("source",sourcePath)
+            .put("material_name",material).put("tint",Color.parseColor(rgb) & 0xffffff).put("description",material));
+    dialog.dismiss();
+   } catch (Exception failure) { error(failure); }
+  }));
+  dialog.show();
+ }
+
  private void chooseForm(String id, String baseSha, String formScope, String baseName) {
   try {
    List<FormLibrary.Profile> forms = new FormLibrary(store.root).available(formScope);
    if (forms.isEmpty()) throw new IOException("Save shared form rules in Library or rules for this base first");
    String[] choices = forms.stream().map(profile -> profile.name() + " · v" + profile.revision()
-           + (profile.baseMeshSha().isEmpty() ? " · shared" : " · this base")).toArray(String[]::new);
+           + (profile.baseScope().isEmpty() ? " · shared" : " · this base")).toArray(String[]::new);
    new AlertDialog.Builder(this).setTitle("Choose a saved form").setItems(choices, (dialog, selected) -> {
     try {
      FormLibrary.Profile profile = forms.get(selected);
      FormLibrary.Rule rule = profile.rule();
-     JSONObject snapshot = new JSONObject().put("name",profile.name()).put("scope",profile.baseMeshSha())
+     JSONObject snapshot = new JSONObject().put("name",profile.name()).put("scope",profile.baseScope())
              .put("version",profile.revision()).put("x",rule.x()).put("y",rule.y()).put("z",rule.z())
              .put("tone",rule.tone()).put("strength",rule.strength()).put("protect_head",rule.preserveHead());
      enqueue(new JSONObject().put("kind",ProductionService.FORM).put("parent",id)
@@ -318,6 +362,44 @@ public final class MainActivity extends Activity {
     } catch (Exception failure) { error(failure); }
    }).show();
   } catch (Exception failure) { error(failure); }
+ }
+
+ private void preferForm(JSONObject request) {
+  try {
+   FormLibrary.Profile form = ProductionService.formFrom(request.getJSONObject("form"));
+   new FormLibrary(store.root).save(form.name(),ProductionService.formScope(request),form.rule());
+   Toast.makeText(this,form.name() + " will use these settings on the original base",Toast.LENGTH_LONG).show();
+  } catch (Exception failure) { error(failure); }
+ }
+
+ private void manageBaseForms(String scope) {
+  try {
+   List<FormLibrary.Profile> profiles = new FormLibrary(store.root).available(scope).stream()
+           .filter(form -> scope.equals(form.baseScope())).collect(java.util.stream.Collectors.toList());
+   String[] choices = new String[profiles.size()+1];
+   choices[0] = "Save new base-specific rules";
+   for (int i = 0; i < profiles.size(); i++) choices[i+1] = profiles.get(i).name();
+   new AlertDialog.Builder(this).setTitle("Form rules for this base").setItems(choices,(dialog, item) -> {
+    if (item == 0) formEditor(scope,null);
+    else manageForm(profiles.get(item-1));
+   }).show();
+  } catch (Exception failure) { error(failure); }
+ }
+
+ private void manageForm(FormLibrary.Profile current) {
+  new AlertDialog.Builder(this).setTitle(current.name()).setItems(new String[]{"Edit latest rules", "Rule history"},
+          (dialog,item) -> {
+   if (item == 0) {
+    formEditor(current.baseScope(),current);
+    return;
+   }
+   try {
+    List<FormLibrary.Profile> history = new FormLibrary(store.root).history(current.name(),current.baseScope());
+    String[] versions = history.stream().map(profile -> "Version " + profile.revision()).toArray(String[]::new);
+    new AlertDialog.Builder(this).setTitle("Load rules from a version")
+            .setItems(versions,(versionsDialog,index) -> formEditor(current.baseScope(),history.get(index))).show();
+   } catch (Exception failure) { error(failure); }
+  }).show();
  }
 
  private void motionDialog(String id, String baseSha, String editable) {
@@ -502,7 +584,7 @@ public final class MainActivity extends Activity {
      }
      runOnUiThread(() -> {
       if ("Create".equals(page)) {
-       nextRecipe = ProductionService.VOLUME;
+       nextRecipe = HUMAN_REFERENCE.equals(kind.getSelectedItem()) ? HUMAN_REFERENCE : ProductionService.VOLUME;
        show("Create");
       }
       Toast.makeText(this, "Verified 3D models installed", Toast.LENGTH_LONG).show();

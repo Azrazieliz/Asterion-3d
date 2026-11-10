@@ -17,10 +17,19 @@ public final class FormAcceptance {
             library.save("Alter", firstCharacter, override);
             FormLibrary.Profile revised = library.save("Alter", "", override);
             FormLibrary reloaded = new FormLibrary(directory.toFile());
-            if (!reloaded.available(firstCharacter).get(0).baseMeshSha().equals(firstCharacter)
+            if (!reloaded.available(firstCharacter).get(0).baseScope().equals(firstCharacter)
                     || !reloaded.available(secondCharacter).get(0).equals(revised)
                     || !reloaded.find("Alter", "", 1).equals(original)) {
                 throw new AssertionError("Profile precedence, revision persistence or history failed");
+            }
+            if (!reloaded.history("Alter", "").equals(java.util.List.of(revised, original))) {
+                throw new AssertionError("Profile history does not expose earlier rules in order");
+            }
+            FormLibrary.Profile restored = reloaded.save("Alter", "", original.rule());
+            if (restored.revision() != 3 || !restored.rule().equals(general)
+                    || !reloaded.available(firstCharacter).get(0).rule().equals(override)
+                    || !reloaded.available(secondCharacter).get(0).equals(restored)) {
+                throw new AssertionError("Restoring a shared rule changed a base-specific preference");
             }
 
             Mesh source = Recipes.create("Humanoid template", 1, 6);

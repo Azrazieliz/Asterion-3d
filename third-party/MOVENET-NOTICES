@@ -1,0 +1,13 @@
+Google MoveNet SinglePose Lightning float16 v4
+
+Authors: Francois Beletti, Ard Oerlemans, Yu-Hui Chen and Ronny Votel, Google.
+Licensed under the Apache License, Version 2.0. See MOVENET-LICENSE.
+
+Google model card:
+https://storage.googleapis.com/movenet/MoveNet.SinglePose%20Model%20Card.pdf
+
+Publisher's LiteRT release:
+https://www.kaggle.com/models/google/movenet/tfLite/singlepose-lightning-tflite-float16/1
+
+The model weights are distributed unmodified. The bundled asset is renamed
+from 4.tflite to movenet_lightning_v4_fp16.tflite.

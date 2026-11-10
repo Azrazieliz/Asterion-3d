@@ -37,7 +37,9 @@ final class ProjectPackage {
             zip.putNextEntry(new ZipEntry("project.json"));
             zip.write(request.toString(2).getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
-            if (!receipt.optBoolean("source_bytes_preserved")) add(zip, "checkpoint.mesh", editable);
+            if (receipt.has("editable_mesh_sha256") || !receipt.optBoolean("source_bytes_preserved") && editable.isFile()) {
+                add(zip, "checkpoint.mesh", editable);
+            }
             for (String name : new String[]{"asset.glb", "receipt.json", "import-manifest.json"}) {
                 add(zip, name, new File(directory, name));
             }

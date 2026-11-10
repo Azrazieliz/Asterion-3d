@@ -1,7 +1,7 @@
 # Asterion 3D Foundry
 
 Android production application for offline reference reconstruction,
-procedural generation and source preservation. The active version is
+procedural generation and source preservation. The latest published APK is
 `0.2.0-native-depth`. The [full product scope](docs/SCOPE.md) remains open.
 
 [Installable ARM64 APK](dist/AsterionFoundry-v0.2.0-DEV.apk) ·
@@ -9,8 +9,9 @@ procedural generation and source preservation. The active version is
 [Verification evidence](docs/VERIFICATION.md)
 
 The source on this branch adds [reference fidelity changes and verification](docs/REFERENCE_FIDELITY.md)
-after that APK. Volumetric character reconstruction remains a preview and has
-not passed visual acceptance.
+and the [0.4 production evaluation](docs/PRODUCTION_EVALUATION.md) after that APK.
+Volumetric character reconstruction remains a preview and has not passed visual
+acceptance.
 
 ## Create and export
 

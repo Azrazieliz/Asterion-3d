@@ -25,6 +25,7 @@ public final class ProductionService extends Service {
     private int latestStart;
     static final String ORIGINAL_GLB = "Preserve original GLB";
     static final String NOWORLD_GLB = "Check NoWorld GLB handoff";
+    static final String MATERIAL_VARIANT = "Original GLB material variant";
     static final String VOLUME = "Image to 3D candidate";
     static final String DEPTH = "AI depth relief";
     static final String HULL = "Multi-view reconstruction";
@@ -146,6 +147,10 @@ public final class ProductionService extends Service {
             preserveGlb(job, request, directory, originals, start);
             return;
         }
+        if (MATERIAL_VARIANT.equals(kind)) {
+            materialVariant(job,request,directory,originals.get("source"),start);
+            return;
+        }
         JSONObject sourceHashes = new JSONObject();
         StringBuilder signature = new StringBuilder(kind).append('|').append(Recipes.VERSION)
                 .append('|').append(request.getDouble("scale")).append('|').append(request.getInt("detail"));
@@ -245,6 +250,10 @@ public final class ProductionService extends Service {
                         ? "not_applicable" : "hierarchy_and_normalized_rigid_weights_only");
         if (candidate.texture != null) receipt.put("texture_sha256", candidate.metrics.getString("texture_sha256"));
         if (motionEvidence != null) receipt.put("motion",motionEvidence);
+        if (VOLUME.equals(kind) && request.optBoolean("human_reference")) {
+            stage(id, 3, "Checking source anatomy evidence");
+            receipt.put("source_pose_evidence",sourcePoseEvidence(originals.get("source")));
+        }
         if (base != null) {
             receipt.put("parent_mesh_sha256", request.getString("parent_mesh_sha256"));
         }
@@ -338,6 +347,34 @@ public final class ProductionService extends Service {
                 .put("asset", "asset.glb").put("sha256", source.getName())
                 .put("native_acceptance", false).put("source_bytes_preserved", true).toString(2));
         store.finish(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
+    }
+
+    private void materialVariant(JSONObject job, JSONObject request, File directory, File source, long start)
+            throws Exception {
+        String id = job.getString("id");
+        if (source == null) throw new IOException("Material variant requires an original self-contained GLB");
+        String material = request.getString("material_name");
+        int tint = request.getInt("tint");
+        if (tint < 0 || tint > 0xffffff) throw new IOException("Invalid material tint");
+        stage(id, job.getInt("stage"), "Revising the selected original material");
+        File asset = new File(directory,"asset.glb");
+        OriginalMaterialVariant.Result variant = OriginalMaterialVariant.write(source,asset,material,
+                VisualHull.linear(tint >>> 16),VisualHull.linear(tint >>> 8),VisualHull.linear(tint));
+        FilesUtil.write(new File(directory,"project.json"),request.toString(2));
+        stage(id, 3, "Writing the material variant receipt");
+        String assetSha = FilesUtil.hash(asset);
+        JSONObject receipt = new JSONObject().put("schema","asterion.foundry.receipt.v1").put("job",id)
+                .put("recipe",MATERIAL_VARIANT).put("outcome","complete").put("source_sha256",source.getName())
+                .put("asset_sha256",assetSha).put("source_bytes_preserved",false).put("binary_payload_preserved",true)
+                .put("material_name",variant.materialName()).put("material_index",variant.materialIndex())
+                .put("resulting_base_color_factor",new JSONArray().put(variant.red()).put(variant.green())
+                        .put(variant.blue()).put(variant.alpha()))
+                .put("visual_quality","UNVALIDATED").put("unreal_import_executed",false);
+        FilesUtil.write(new File(directory,"receipt.json"),receipt.toString(2));
+        FilesUtil.write(new File(directory,"import-manifest.json"),new JSONObject()
+                .put("schema","asterion.foundry.intermediate.v1").put("asset","asset.glb").put("sha256",assetSha)
+                .put("source_sha256",source.getName()).put("native_acceptance",false).toString(2));
+        store.finish(id,MATERIAL_VARIANT,SystemClock.elapsedRealtime()-start,false,receipt);
     }
 
     private record Candidate(Mesh mesh, JSONObject metrics, byte[] texture) {
@@ -461,17 +498,11 @@ public final class ProductionService extends Service {
                     request.has("color") ? request.getInt("color") : null), new JSONObject(), base.textureBytes());
         }
         if (FORM.equals(kind)) {
-            JSONObject snapshot = request.getJSONObject("form");
-            String scope = snapshot.getString("scope");
-            String parentScope = FilesUtil.hash(request.getString("parent") + "|" + request.getString("parent_mesh_sha256"));
-            if (!scope.isEmpty() && !scope.equals(parentScope)) {
+            FormLibrary.Profile form = formFrom(request.getJSONObject("form"));
+            if (!form.baseScope().isEmpty() && !form.baseScope().equals(formScope(request))) {
                 throw new IOException("Saved form is scoped to a different base mesh");
             }
-            FormLibrary.Rule rule = new FormLibrary.Rule((float) snapshot.getDouble("x"),
-                    (float) snapshot.getDouble("y"),(float) snapshot.getDouble("z"), snapshot.getInt("tone"),
-                    (float) snapshot.getDouble("strength"),snapshot.getBoolean("protect_head"));
-            new FormLibrary.Profile(snapshot.getString("name"),scope,snapshot.getInt("version"),rule);
-            return new Candidate(rule.apply(Mesh.load(base.mesh())), new JSONObject(), base.textureBytes());
+            return new Candidate(form.rule().apply(Mesh.load(base.mesh())), new JSONObject(), base.textureBytes());
         }
         if (MOTION.equals(kind)) {
             return new Candidate(Mesh.load(base.mesh()), new JSONObject(), base.textureBytes());
@@ -487,6 +518,60 @@ public final class ProductionService extends Service {
             return new Candidate(Glb.readObj(source), new JSONObject());
         }
         return new Candidate(Recipes.create(kind, scale, detail), new JSONObject());
+    }
+
+    static FormLibrary.Profile formFrom(JSONObject snapshot) throws Exception {
+        FormLibrary.Rule rule = new FormLibrary.Rule((float) snapshot.getDouble("x"),
+                (float) snapshot.getDouble("y"),(float) snapshot.getDouble("z"), snapshot.getInt("tone"),
+                (float) snapshot.getDouble("strength"),snapshot.getBoolean("protect_head"));
+        return new FormLibrary.Profile(snapshot.getString("name"),snapshot.getString("scope"),
+                snapshot.getInt("version"),rule);
+    }
+
+    static String formScope(JSONObject request) throws Exception {
+        return FilesUtil.hash(request.getString("parent") + "|" + request.getString("parent_mesh_sha256"));
+    }
+
+    private JSONObject sourcePoseEvidence(File source) throws Exception {
+        JSONObject result = new JSONObject().put("model",PoseModel.IDENTITY).put("model_sha256",PoseModel.SHA256)
+                .put("coordinate_space","normalized_original_image_xy")
+                .put("minimum_confidence",PoseEvidence.MIN_CONFIDENCE)
+                .put("reconstructed_anatomy_verified",false);
+        File cache = new File(store.root,"cache/pose-v1-" + source.getName() + "-" + PoseModel.SHA256 + ".json");
+        if (cache.isFile()) {
+            try {
+                JSONObject saved = new JSONObject(Files.readString(cache.toPath()));
+                if (source.getName().equals(saved.getString("source_sha256"))
+                        && PoseModel.SHA256.equals(saved.getString("model_sha256"))) {
+                    return saved.put("reused",true);
+                }
+            } catch (IOException | org.json.JSONException damaged) {
+                android.util.Log.w("Foundry","Refreshing unreadable pose evidence",damaged);
+            }
+        }
+        try {
+            PoseModel.Estimate estimate = PoseModel.predict(this,SourceFiles.decode(source,1024));
+            PoseEvidence evidence = estimate.evidence();
+            boolean supportedTorso = evidence.hasTorsoSupport();
+            JSONArray points = new JSONArray();
+            int usable = 0;
+            for (PoseEvidence.Point point : evidence.points()) {
+                boolean supported = supportedTorso && point.usable();
+                if (supported) usable++;
+                points.put(new JSONObject().put("joint",point.joint().name())
+                        .put("x",point.x()).put("y",point.y()).put("confidence",point.confidence())
+                        .put("in_frame",point.inFrame()).put("observation",supported ? "supported_prediction" : "not_established"));
+            }
+            result.put("status",supportedTorso ? "torso_supported" : "torso_not_established")
+                    .put("source_sha256",source.getName()).put("reused",false)
+                    .put("supported_landmarks",usable).put("landmarks",points)
+                    .put("threads",estimate.threads()).put("inference_and_setup_ms",estimate.elapsedMillis());
+            FilesUtil.write(cache,result.toString(2));
+        } catch (IOException | LinkageError unavailable) {
+            result.put("status","model_unavailable").put("reason",unavailable.getMessage());
+            android.util.Log.w("Foundry","Source pose evidence unavailable",unavailable);
+        }
+        return result;
     }
 
     private static String method(String kind) {

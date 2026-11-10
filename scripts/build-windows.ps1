@@ -17,12 +17,15 @@ New-Item -ItemType Directory -Force -Path "$build\classes","$build\dex","$build\
 $sourceFiles=@(Get-ChildItem "$src\java" -Recurse -File -Filter '*.java' | ForEach-Object {$_.FullName})
 & "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -cp $classPath -d "$build\classes" @sourceFiles
 if($LASTEXITCODE -ne 0){throw 'Java compilation failed'}
-$core=@('FilesUtil','Mesh','Recipes','Glb','VisualHull','GeometryAudit','DepthRelief','MeshRevision') | ForEach-Object {"$src\java\com\asterion\foundry\$_.java"}
-& "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -d "$build\host" @core "$root\tests\CoreAcceptance.java"
+$core=@('FilesUtil','Mesh','Recipes','Glb','VisualHull','GeometryAudit','DepthRelief','MeshRevision','FormLibrary','SkeletalMotion','ReferenceView','PoseEvidence') | ForEach-Object {"$src\java\com\asterion\foundry\$_.java"}
+$fixtures=@('CoreAcceptance','FormAcceptance','MotionAcceptance','ReferenceViewAcceptance','PoseEvidenceAcceptance') | ForEach-Object {"$root\tests\$_.java"}
+& "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -d "$build\host" @core @fixtures
 if($LASTEXITCODE -ne 0){throw 'Host test compilation failed'}
 Push-Location $root
-& "$Java\bin\java.exe" -cp "$build\host" CoreAcceptance
-if($LASTEXITCODE -ne 0){throw 'Core acceptance failed'}
+foreach($fixture in @('CoreAcceptance','com.asterion.foundry.FormAcceptance','MotionAcceptance','com.asterion.foundry.ReferenceViewAcceptance','com.asterion.foundry.PoseEvidenceAcceptance')) {
+    & "$Java\bin\java.exe" -cp "$build\host" $fixture
+    if($LASTEXITCODE -ne 0){throw "Acceptance failed: $fixture"}
+}
 & 'D:\Tools\Python311\python.exe' "$root\scripts\validate_glb.py" @(Get-ChildItem "$root\test-output" -Filter '*.glb' | ForEach-Object {$_.FullName})
 if($LASTEXITCODE -ne 0){throw 'GLB validation failed'}
 Pop-Location

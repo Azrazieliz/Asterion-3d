@@ -56,28 +56,28 @@ final class FormLibrary {
         }
     }
 
-    record Profile(String name, String baseMeshSha, int revision, Rule rule) {
+    record Profile(String name, String baseScope, int revision, Rule rule) {
         Profile {
             name = cleanName(name);
-            checkScope(baseMeshSha);
+            checkScope(baseScope);
             if (revision < 1 || rule == null) throw new IllegalArgumentException("Invalid form revision");
         }
     }
 
-    Profile save(String name, String baseMeshSha, Rule rule) throws Exception {
+    Profile save(String name, String baseScope, Rule rule) throws Exception {
         name = cleanName(name);
-        File directory = profileDirectory(name, baseMeshSha);
+        File directory = profileDirectory(name, baseScope);
         synchronized (FormLibrary.class) {
             Files.createDirectories(directory.toPath());
             Profile previous = latest(directory);
             if (previous != null && previous.rule().equals(rule)) return previous;
             int revision = previous == null ? 1 : Math.addExact(previous.revision(), 1);
-            Profile profile = new Profile(name, baseMeshSha, revision, rule);
+            Profile profile = new Profile(name, baseScope, revision, rule);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (DataOutputStream out = new DataOutputStream(bytes)) {
                 out.writeInt(MAGIC);
                 out.writeUTF(profile.name());
-                out.writeUTF(baseMeshSha);
+                out.writeUTF(baseScope);
                 out.writeInt(revision);
                 out.writeFloat(rule.x());
                 out.writeFloat(rule.y());
@@ -91,29 +91,40 @@ final class FormLibrary {
         }
     }
 
-    Profile find(String name, String baseMeshSha, int revision) throws Exception {
-        File file = new File(profileDirectory(name, baseMeshSha), versionName(revision));
+    Profile find(String name, String baseScope, int revision) throws Exception {
+        File file = new File(profileDirectory(name, baseScope), versionName(revision));
         Profile profile = read(file);
-        if (!key(profile.name()).equals(key(name)) || !baseMeshSha.equals(profile.baseMeshSha())) {
+        if (!key(profile.name()).equals(key(name)) || !baseScope.equals(profile.baseScope())) {
             throw new IOException("Saved form profile scope does not match its location");
         }
         return profile;
     }
 
-    List<Profile> available(String baseMeshSha) throws Exception {
+    List<Profile> history(String name, String baseScope) throws Exception {
+        File directory = profileDirectory(name, baseScope);
+        String[] versions = revisionFiles(directory);
+        ArrayList<Profile> result = new ArrayList<>(versions.length);
+        for (int i = versions.length - 1; i >= 0; i--) {
+            int revision = Integer.parseInt(versions[i].substring(0,10));
+            result.add(find(name,baseScope,revision));
+        }
+        return result;
+    }
+
+    List<Profile> available(String baseScope) throws Exception {
         TreeMap<String, Profile> profiles = new TreeMap<>();
         readScope("", profiles);
-        if (!baseMeshSha.isEmpty()) readScope(baseMeshSha, profiles);
+        if (!baseScope.isEmpty()) readScope(baseScope, profiles);
         return new ArrayList<>(profiles.values());
     }
 
-    private void readScope(String baseMeshSha, TreeMap<String, Profile> profiles) throws Exception {
-        File[] directories = scope(baseMeshSha).listFiles(File::isDirectory);
+    private void readScope(String baseScope, TreeMap<String, Profile> profiles) throws Exception {
+        File[] directories = scope(baseScope).listFiles(File::isDirectory);
         if (directories == null) return;
         for (File directory : directories) {
             Profile profile = latest(directory);
             if (profile == null) continue;
-            if (!baseMeshSha.equals(profile.baseMeshSha()) || !directory.equals(profileDirectory(profile.name(), baseMeshSha))) {
+            if (!baseScope.equals(profile.baseScope()) || !directory.equals(profileDirectory(profile.name(), baseScope))) {
                 throw new IOException("Saved form profile is in the wrong scope");
             }
             profiles.put(key(profile.name()), profile);
@@ -121,34 +132,40 @@ final class FormLibrary {
     }
 
     private static Profile latest(File directory) throws IOException {
-        String[] versions = directory.list((dir, name) -> name.matches("[0-9]{10}\\.form"));
-        if (versions == null || versions.length == 0) return null;
-        Arrays.sort(versions);
+        String[] versions = revisionFiles(directory);
+        if (versions.length == 0) return null;
         return read(new File(directory, versions[versions.length - 1]));
+    }
+
+    private static String[] revisionFiles(File directory) {
+        String[] versions = directory.list((dir, name) -> name.matches("[0-9]{10}\\.form"));
+        if (versions == null) return new String[0];
+        Arrays.sort(versions);
+        return versions;
     }
 
     private static Profile read(File file) throws IOException {
         try (DataInputStream in = new DataInputStream(Files.newInputStream(file.toPath()))) {
             if (in.readInt() != MAGIC) throw new IOException("Unsupported form profile format");
             String name = in.readUTF();
-            String baseMeshSha = in.readUTF();
+            String baseScope = in.readUTF();
             int revision = in.readInt();
             Rule rule = new Rule(in.readFloat(), in.readFloat(), in.readFloat(), in.readInt(),
                     in.readFloat(), in.readBoolean());
             if (in.read() != -1 || !versionName(revision).equals(file.getName())) {
                 throw new IOException("Saved form profile failed its format checks");
             }
-            return new Profile(name, baseMeshSha, revision, rule);
+            return new Profile(name, baseScope, revision, rule);
         }
     }
 
-    private File profileDirectory(String name, String baseMeshSha) throws Exception {
-        return new File(scope(baseMeshSha), FilesUtil.hash(key(name)));
+    private File profileDirectory(String name, String baseScope) throws Exception {
+        return new File(scope(baseScope), FilesUtil.hash(key(name)));
     }
 
-    private File scope(String baseMeshSha) {
-        checkScope(baseMeshSha);
-        return new File(root, baseMeshSha.isEmpty() ? "shared" : baseMeshSha);
+    private File scope(String baseScope) {
+        checkScope(baseScope);
+        return new File(root, baseScope.isEmpty() ? "shared" : baseScope);
     }
 
     private static void checkScope(String sha) {

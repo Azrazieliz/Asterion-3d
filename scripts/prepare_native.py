@@ -8,6 +8,7 @@ import urllib.request
 import zipfile
 
 MODEL = "midas_small_256_fp16.tflite"
+POSE_MODEL = "movenet_lightning_v4_fp16.tflite"
 ORT = "onnxruntime-android-1.31.1"
 FILES = {
     "ONNXRUNTIME-THIRD-PARTY": (
@@ -26,6 +27,12 @@ FILES = {
         "b6f24f361d9e1bce8f33e970aebcb9e5e2d1a12c/" + MODEL,
         "bec9bce704789e504ec306196fcb0aabe90fd25c2b9d7db382339741950890ca",
         40 * 1024 * 1024,
+    ),
+    POSE_MODEL: (
+        "https://www.kaggle.com/api/v1/models/google/movenet/tfLite/"
+        "singlepose-lightning-tflite-float16/1/download/4.tflite",
+        "0fac2226112d0371903ca86e3853cec24ef603a0b2f96f589b180f0ebdd135ab",
+        6 * 1024 * 1024,
     ),
     "litert-1.4.2.aar": (
         "https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert/litert/1.4.2/litert-1.4.2.aar",
@@ -77,11 +84,12 @@ def main():
     cache.mkdir(parents=True, exist_ok=True)
     for folder in ("assets/licenses", "jni/arm64-v8a", "jars"):
         (stage / folder).mkdir(parents=True, exist_ok=True)
-    model = obtain(cache, MODEL)
-    with model.open("rb") as stream:
-        if stream.read(8)[4:8] != b"TFL3":
-            raise ValueError("Invalid LiteRT model identifier")
-    shutil.copyfile(model, stage / "assets" / MODEL)
+    for name in (MODEL, POSE_MODEL):
+        model = obtain(cache, name)
+        with model.open("rb") as stream:
+            if stream.read(8)[4:8] != b"TFL3":
+                raise ValueError(f"Invalid LiteRT model identifier for {name}")
+        shutil.copyfile(model, stage / "assets" / name)
     shutil.copyfile(Path(__file__).resolve().parents[1] / "third-party" / "MIDAS-LICENSE",
                     stage / "assets/licenses/MiDaS.txt")
     for artifact in ("litert-1.4.2", "litert-api-1.4.2"):
@@ -98,10 +106,11 @@ def main():
             (stage / "jni" / path).write_bytes(archive.read("jni/" + path))
     shutil.copyfile(obtain(cache, "ONNXRUNTIME-THIRD-PARTY"),
                     stage / "assets/licenses/ONNXRUNTIME-THIRD-PARTY")
-    for name in ("ONNXRUNTIME-LICENSE", "TRIPOSR-LICENSE", "TRIPOSR-NOTICES"):
+    for name in ("ONNXRUNTIME-LICENSE", "TRIPOSR-LICENSE", "TRIPOSR-NOTICES",
+                 "MOVENET-LICENSE", "MOVENET-NOTICES"):
         shutil.copyfile(Path(__file__).resolve().parents[1] / "third-party" / name,
                         stage / "assets/licenses" / name)
-    print(f"Prepared {MODEL}, LiteRT and ONNX Runtime ARM64 with pinned SHA-256 hashes")
+    print(f"Prepared {MODEL}, {POSE_MODEL}, LiteRT and ONNX Runtime ARM64 with pinned SHA-256 hashes")
 
 
 if __name__ == "__main__":
