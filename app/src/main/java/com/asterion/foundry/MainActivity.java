@@ -284,6 +284,13 @@ public final class MainActivity extends Activity {
       button("Prefer these settings on the original base", () -> preferForm(request));
      }
      button("Create animation", () -> motionDialog(id,baseSha,null));
+     if (!mesh.blended() && motion == null) button("Blend skin weights", () -> {
+      try {
+       enqueue(new JSONObject().put("kind",ProductionService.SKIN_BLEND).put("parent",id)
+               .put("parent_mesh_sha256",baseSha).put("scale",1).put("detail",12)
+               .put("description",request.optString("description")));
+      } catch (Exception failure) { error(failure); }
+     });
      if (motion != null) {
       String editable = motionScript;
       button("Edit animation tracks", () -> motionDialog(id,baseSha,editable));

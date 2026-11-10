@@ -32,6 +32,7 @@ public final class ProductionService extends Service {
     static final String REVISION = "Mesh revision";
     static final String FORM = "Saved form variant";
     static final String MOTION = "Skeletal animation";
+    static final String SKIN_BLEND = "Blend skin weights";
 
     @Override public void onCreate() {
         super.onCreate();
@@ -167,7 +168,8 @@ public final class ProductionService extends Service {
         }
         if (DEPTH.equals(kind)) signature.append("|depth-relief-v1|").append(MidasDepth.SHA256);
         if (HULL.equals(kind)) signature.append('|').append(VisualHull.METHOD);
-        Base base = REVISION.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) ? base(request) : null;
+        if (isRigTemplate(kind)) signature.append('|').append(SkinBlend.VERSION);
+        Base base = REVISION.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind) ? base(request) : null;
         if (base != null) {
             signature.append("|derived-v2|").append(request.getString("parent_mesh_sha256"))
                     .append('|').append(base.textureSha());
@@ -175,6 +177,7 @@ public final class ProductionService extends Service {
                 case FORM -> signature.append('|').append(request.getJSONObject("form"));
                 case MOTION -> signature.append('|').append(SkeletalMotion.VERSION).append('|')
                         .append(request.optString("motion_script", request.optString("motion_intent")));
+                case SKIN_BLEND -> signature.append('|').append(SkinBlend.VERSION);
                 default -> signature.append('|').append(request.getJSONArray("axes")).append('|').append(request.opt("color"));
             }
         }
@@ -247,7 +250,8 @@ public final class ProductionService extends Service {
                 .put("source_appearance_preserved", false)
                 .put("mobile_optimization", "not_validated")
                 .put("rig_validation", VOLUME.equals(kind) ? "unrigged" : candidate.mesh.bones.isEmpty()
-                        ? "not_applicable" : "hierarchy_and_normalized_rigid_weights_only");
+                        ? "not_applicable" : candidate.mesh.blended() ? "hierarchy_and_normalized_blend_weights"
+                        : "hierarchy_and_normalized_rigid_weights_only");
         if (candidate.texture != null) receipt.put("texture_sha256", candidate.metrics.getString("texture_sha256"));
         if (motionEvidence != null) receipt.put("motion",motionEvidence);
         if (VOLUME.equals(kind) && request.optBoolean("human_reference")) {
@@ -507,6 +511,9 @@ public final class ProductionService extends Service {
         if (MOTION.equals(kind)) {
             return new Candidate(Mesh.load(base.mesh()), new JSONObject(), base.textureBytes());
         }
+        if (SKIN_BLEND.equals(kind)) {
+            return blendSkin(Mesh.load(base.mesh()),base.textureBytes());
+        }
         if ("Image silhouette".equals(kind)) {
             SourceFiles.Raster image = SourceFiles.decode(files.get("source"), 96);
             return new Candidate(Recipes.silhouette(image.pixels(), image.width(), image.height(),
@@ -517,7 +524,19 @@ public final class ProductionService extends Service {
             if (source == null) throw new IOException("OBJ original is missing");
             return new Candidate(Glb.readObj(source), new JSONObject());
         }
-        return new Candidate(Recipes.create(kind, scale, detail), new JSONObject());
+        Mesh recipe = Recipes.create(kind, scale, detail);
+        return isRigTemplate(kind) ? blendSkin(recipe,null) : new Candidate(recipe, new JSONObject());
+    }
+
+    private Candidate blendSkin(Mesh mesh, byte[] texture) throws Exception {
+        int changed = SkinBlend.apply(mesh,this::check);
+        if (changed == 0) throw new IOException("No compatible joint transition was found");
+        return new Candidate(mesh,new JSONObject().put("skin_method",SkinBlend.VERSION)
+                .put("blended_vertices",changed).put("deformation_visually_validated",false),texture);
+    }
+
+    private static boolean isRigTemplate(String kind) {
+        return "Humanoid template".equals(kind) || "Quadruped template".equals(kind);
     }
 
     static FormLibrary.Profile formFrom(JSONObject snapshot) throws Exception {
@@ -582,6 +601,7 @@ public final class ProductionService extends Service {
             case REVISION -> "non_destructive_mesh_revision";
             case FORM -> "saved_form_rule_v1";
             case MOTION -> SkeletalMotion.VERSION;
+            case SKIN_BLEND -> SkinBlend.VERSION;
             case "Image silhouette" -> "deterministic_2_5d_extrusion";
             case "OBJ geometry" -> "triangulated_OBJ_geometry_only";
             default -> "parametric_recipe";

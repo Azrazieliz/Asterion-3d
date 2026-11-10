@@ -1,11 +1,13 @@
 package com.asterion.foundry;
 import java.io.*;
 import java.util.*;
-/** Editable triangle soup: position, normal, UV, RGBA and rigid skin binding. Metres, Y up. */
+/** Editable triangles in metres, Y up, with optional four-joint linear skin binding. */
 public final class Mesh {
  public final ArrayList<float[]> vertices=new ArrayList<>();
  public final ArrayList<Bone> bones=new ArrayList<>();
  public static final int STRIDE=13, LIMIT=1500000;
+ private static final int WEIGHTED_STRIDE=20, LEGACY_MAGIC=0x41463344, WEIGHTED_MAGIC=0x41463345;
+ static final int INFLUENCES=4;
  public static final class Bone { public String name; public int parent; public float x,y,z; public Bone(String n,int p,float a,float b,float c){name=n;parent=p;x=a;y=b;z=c;} }
  public void tri(float[] a,float[] b,float[] c,float[] color,int joint){
   if(vertices.size()+3>LIMIT)throw new IllegalArgumentException("Mesh exceeds current memory budget");
@@ -29,13 +31,61 @@ public final class Mesh {
  }
  private float[] point(float x,float y,float z,float rx,float ry,float rz,int r,int s,int rings,int sides){double p=Math.PI*r/rings,t=2*Math.PI*s/sides;return new float[]{x+rx*(float)(Math.sin(p)*Math.cos(t)),y+ry*(float)Math.cos(p),z+rz*(float)(Math.sin(p)*Math.sin(t))};}
  public int bone(String name,int parent,float x,float y,float z){bones.add(new Bone(name,parent,x,y,z));return bones.size()-1;}
+ static int joint(float[] vertex,int slot){return slot==0?(int)vertex[12]:vertex.length==STRIDE?0:(int)vertex[12+2*slot];}
+ static float weight(float[] vertex,int slot){return vertex.length==STRIDE?(slot==0?1:0):vertex[13+2*slot];}
+ static float[] bindPair(float[] vertex,int first,int second,float secondWeight){
+  float[] bound=Arrays.copyOf(vertex,WEIGHTED_STRIDE);
+  Arrays.fill(bound,12,WEIGHTED_STRIDE,0);
+  bound[12]=first;bound[13]=1-secondWeight;bound[14]=second;bound[15]=secondWeight;
+  return bound;
+ }
+ boolean blended(){for(float[] v:vertices)if(v.length==WEIGHTED_STRIDE)return true;return false;}
  public float[] bounds(){float[] b={Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY};for(float[] v:vertices)for(int k=0;k<3;k++){b[k]=Math.min(b[k],v[k]);b[k+3]=Math.max(b[k+3],v[k]);}return b;}
  public String validate(){
   if(vertices.isEmpty()||vertices.size()%3!=0)throw new IllegalStateException("Empty or incomplete mesh");
   for(int i=0;i<bones.size();i++){Bone b=bones.get(i);if(b.parent>=i||b.parent< -1)throw new IllegalStateException("Invalid bone hierarchy");}
-  for(float[] v:vertices){for(float f:v)if(!Float.isFinite(f))throw new IllegalStateException("Non-finite mesh data");float len=v[3]*v[3]+v[4]*v[4]+v[5]*v[5];if(Math.abs(len-1)>0.001)throw new IllegalStateException("Invalid normal");if(!bones.isEmpty()&&(v[12]<0||v[12]>=bones.size()))throw new IllegalStateException("Invalid skin binding");}
-  return "{\"finite_geometry\":true,\"unit_normals\":true,\"triangles\":"+vertices.size()/3+",\"bones\":"+bones.size()+",\"skin_weights\":\""+(bones.isEmpty()?"not_applicable":"normalized_rigid")+"\",\"manifold\":\"not_checked\",\"uv_overlap\":\"not_checked\",\"deformation\":\"not_visually_validated\",\"reference_fidelity\":\"not_validated\"}";
+  boolean blended=false;
+  for(float[] v:vertices){
+   if(v.length!=STRIDE&&(v.length!=WEIGHTED_STRIDE||bones.isEmpty()))throw new IllegalStateException("Invalid vertex layout");
+   for(float f:v)if(!Float.isFinite(f))throw new IllegalStateException("Non-finite mesh data");
+   float len=v[3]*v[3]+v[4]*v[4]+v[5]*v[5];if(Math.abs(len-1)>0.001)throw new IllegalStateException("Invalid normal");
+   if(bones.isEmpty())continue;
+   blended|=v.length==WEIGHTED_STRIDE;
+   float sum=0;
+   for(int slot=0;slot<INFLUENCES;slot++){
+    int index=joint(v,slot);float amount=weight(v,slot);
+    if(index<0||index>=bones.size()||amount<0||amount>1||(v.length!=STRIDE||slot==0)&&v[12+2*slot]!=index)throw new IllegalStateException("Invalid skin binding");
+    for(int earlier=0;earlier<slot&&amount>0;earlier++)if(weight(v,earlier)>0&&joint(v,earlier)==index)throw new IllegalStateException("Duplicate skin joint");
+    sum+=amount;
+   }
+   if(Math.abs(sum-1)>1e-5)throw new IllegalStateException("Skin weights must sum to one");
+  }
+  return "{\"finite_geometry\":true,\"unit_normals\":true,\"triangles\":"+vertices.size()/3+",\"bones\":"+bones.size()+",\"skin_weights\":\""+(bones.isEmpty()?"not_applicable":blended?"normalized_blended":"normalized_rigid")+"\",\"manifold\":\"not_checked\",\"uv_overlap\":\"not_checked\",\"deformation\":\"not_visually_validated\",\"reference_fidelity\":\"not_validated\"}";
  }
- public void save(File f)throws IOException{File tmp=new File(f+".tmp");try(DataOutputStream o=new DataOutputStream(new BufferedOutputStream(new FileOutputStream(tmp)))){o.writeInt(0x41463344);o.writeInt(bones.size());for(Bone b:bones){o.writeUTF(b.name);o.writeInt(b.parent);o.writeFloat(b.x);o.writeFloat(b.y);o.writeFloat(b.z);}o.writeInt(vertices.size());for(float[] v:vertices)for(float n:v)o.writeFloat(n);}FilesUtil.move(tmp,f);}
- public static Mesh load(File f)throws IOException{Mesh m=new Mesh();try(DataInputStream in=new DataInputStream(new BufferedInputStream(new FileInputStream(f)))){if(in.readInt()!=0x41463344)throw new IOException("Not a Foundry mesh");int n=in.readInt();if(n<0||n>512)throw new IOException("Invalid bone count");for(int i=0;i<n;i++)m.bone(in.readUTF(),in.readInt(),in.readFloat(),in.readFloat(),in.readFloat());n=in.readInt();if(n<0||n>LIMIT)throw new IOException("Invalid vertex count");for(int i=0;i<n;i++){float[] v=new float[STRIDE];for(int j=0;j<STRIDE;j++)v[j]=in.readFloat();m.vertices.add(v);}}m.validate();return m;}
+ public void save(File f)throws IOException{
+  boolean weighted=blended();File tmp=new File(f+".tmp");
+  try(FileOutputStream file=new FileOutputStream(tmp);DataOutputStream o=new DataOutputStream(new BufferedOutputStream(file))){
+   o.writeInt(weighted?WEIGHTED_MAGIC:LEGACY_MAGIC);o.writeInt(bones.size());
+   for(Bone b:bones){o.writeUTF(b.name);o.writeInt(b.parent);o.writeFloat(b.x);o.writeFloat(b.y);o.writeFloat(b.z);}
+   o.writeInt(vertices.size());
+   for(float[] v:vertices){
+    for(float n:v)o.writeFloat(n);
+    if(weighted&&v.length==STRIDE){o.writeFloat(1);for(int i=0;i<6;i++)o.writeFloat(0);}
+   }
+   o.flush();file.getFD().sync();
+  }
+  FilesUtil.move(tmp,f);
+ }
+ public static Mesh load(File f)throws IOException{
+  Mesh m=new Mesh();
+  try(DataInputStream in=new DataInputStream(new BufferedInputStream(new FileInputStream(f)))){
+   int magic=in.readInt();int stride=switch(magic){case LEGACY_MAGIC->STRIDE;case WEIGHTED_MAGIC->WEIGHTED_STRIDE;default->throw new IOException("Not a Foundry mesh");};
+   int n=in.readInt();if(n<0||n>512)throw new IOException("Invalid bone count");
+   for(int i=0;i<n;i++)m.bone(in.readUTF(),in.readInt(),in.readFloat(),in.readFloat(),in.readFloat());
+   n=in.readInt();if(n<0||n>LIMIT||n*(long)stride*4>f.length())throw new IOException("Invalid vertex count");
+   for(int i=0;i<n;i++){float[] v=new float[stride];for(int j=0;j<stride;j++)v[j]=in.readFloat();m.vertices.add(v);}
+   if(in.read()!=-1)throw new IOException("Unexpected mesh data after vertices");
+  }
+  m.validate();return m;
+ }
 }

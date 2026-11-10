@@ -15,7 +15,13 @@ public final class Glb {
   int motionOffset=meshBytes+boneBytes+textureBytes,motionBytes=0;
   for(SkeletalMotion.Track track:tracks)motionBytes+=4*track.times().length*(1+track.components());
   ByteBuffer bin=ByteBuffer.allocate(motionOffset+motionBytes).order(ByteOrder.LITTLE_ENDIAN);
-  for(float[] v:m.vertices){for(int i=0;i<12;i++)bin.putFloat(v[i]);if(skin){bin.putShort((short)v[12]);for(int i=0;i<3;i++)bin.putShort((short)0);bin.putFloat(1);for(int i=0;i<3;i++)bin.putFloat(0);}}
+  for(float[] v:m.vertices){
+   for(int i=0;i<12;i++)bin.putFloat(v[i]);
+   if(skin){
+    for(int i=0;i<Mesh.INFLUENCES;i++)bin.putShort((short)Mesh.joint(v,i));
+    for(int i=0;i<Mesh.INFLUENCES;i++)bin.putFloat(Mesh.weight(v,i));
+   }
+  }
   if(skin)for(Mesh.Bone b:m.bones)for(int i=0;i<16;i++)bin.putFloat(i==12?-b.x:i==13?-b.y:i==14?-b.z:(i==0||i==5||i==10||i==15)?1:0);
   if(png!=null)bin.put(png);
   bin.position(motionOffset);
