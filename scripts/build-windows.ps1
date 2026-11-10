@@ -33,8 +33,9 @@ Pop-Location
 if($LASTEXITCODE -ne 0){throw 'Resources failed'}
 & "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 4 --version-name '0.4.0-production-evaluation' -0 tflite -A "$native\assets" "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'AAPT failed'}
-$classFiles=@(Get-ChildItem "$build\classes" -Recurse -Filter '*.class' | ForEach-Object {$_.FullName})
-& "$tools\d8.bat" --release --min-api 29 --lib $android --output "$build\dex" @classFiles @jars
+& "$Java\bin\jar.exe" --create --file "$build\classes.jar" -C "$build\classes" .
+if($LASTEXITCODE -ne 0){throw 'Class archive failed'}
+& "$tools\d8.bat" --release --min-api 29 --lib $android --output "$build\dex" "$build\classes.jar" @jars
 if($LASTEXITCODE -ne 0){throw 'D8 failed'}
 & $python "$root\scripts\pack_native_apk.py" "$build\unsigned.apk" "$build\dex" "$native\jni"
 if($LASTEXITCODE -ne 0){throw 'DEX insertion failed'}

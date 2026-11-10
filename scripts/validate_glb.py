@@ -29,8 +29,9 @@ def check_animation(gltf, binary):
     assert view['byteOffset'] % 4 == 0 and 'target' not in view and 'byteStride' not in view
     start = view['byteOffset'] + accessor.get('byteOffset', 0)
     components = COMPONENTS[accessor['type']]
-    values = list(struct.iter_unpack('<' + 'f' * components,
-                                      binary[start:start + accessor['count'] * components * 4]))
+    end = start + accessor['count'] * components * 4
+    assert 0 <= start < end <= len(binary)
+    values = list(struct.iter_unpack('<' + 'f' * components, binary[start:end]))
     assert all(math.isfinite(value) for vector in values for value in vector)
     decoded.append(values)
    times = [vector[0] for vector in decoded[0]]
@@ -68,9 +69,14 @@ for name in sys.argv[1:]:
  if 'skins' in g:
   joints=g['skins'][0]['joints'];parents={child:i for i,node in enumerate(g['nodes']) for child in node.get('children',[])}
   def root(i):
-   while i in parents: i=parents[i]
+   visited=set()
+   while i in parents:
+    assert i not in visited, 'Joint hierarchy contains a cycle'
+    visited.add(i)
+    i=parents[i]
    return i
-  assert len({root(i) for i in joints})==1, 'Skinned joints need a common hierarchy root'
+  roots={root(i) for i in joints}
+  assert len(roots)==1 and roots.issubset(g['scenes'][g['scene']]['nodes']), 'Skinned joints need a common hierarchy root'
   def world(i):
    t=g['nodes'][i].get('translation',[0,0,0]);p=world(parents[i]) if i in parents else [0,0,0];return [x+y for x,y in zip(t,p)]
   off=g['bufferViews'][1]['byteOffset']
@@ -80,4 +86,4 @@ for name in sys.argv[1:]:
    js=struct.unpack_from('<4H',binary,i*stride+48);ws=struct.unpack_from('<4f',binary,i*stride+56);assert max(js)<len(joints) and abs(sum(ws)-1)<1e-6
  animations = check_animation(g, binary)
  print(pathlib.Path(name).name,'binary/accessor/bounds/rest-pose checks PASS'
-       + (f'; {animations} animation channel/sampler checks PASS' if animations else ''))
+       + (f'; animation channel/sampler checks PASS ({animations} clip)' if animations else ''))
