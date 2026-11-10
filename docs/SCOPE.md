@@ -4,7 +4,17 @@ Authority: owner implementation assignment of 2026-11-09. The 0.1 production sli
 
 ## Required finished product
 
-One autonomous Android application on Samsung SM-S948B, Android 17, ARM64. Images, descriptions, existing 3D sources and supported Koikatsu inputs must produce editable high-quality assets without manual production. Characters, nonhuman creatures and unusual anatomy, weapons/equipment, architecture/interiors/caves, vegetation/terrain, mechanical objects, animations, expressions and multi-participant interactions are all required. Koikatsu remains optional and independent.
+One autonomous Android application on Samsung SM-S948B, Android 17, ARM64. Images, descriptions and existing 3D sources must produce finished, editable 3D assets without manual production. Characters, nonhuman creatures and unusual anatomy, weapons/equipment, architecture/interiors/caves, vegetation/terrain, mechanical objects, animations, expressions and multi-participant interactions are all required. Koikatsu is an optional source when an existing 3D asset needs work that Koikatsu cannot perform. No Koikatsu input is required for ordinary creation or when the asset is already complete in Koikatsu.
+
+### Finished assets and animation
+
+- Animatable assets ship ready to animate, with the appropriate skeleton or controls, binding, skin weights and deformation verified. Editable project files accompany the finished deliverable. When animation is requested, ship finished, playable motion on the intended rig, including expressions or synchronized participant and prop motion where specified. Validate playback, timing, contact and deformation before delivery.
+- A cropped or occluded reference is partial evidence. Complete missing geometry coherently using visible landmarks, anatomy or object structure, and additional references or approved source data when available. A cropped arm must have the expected joints and hand unless the character design establishes otherwise. Check part type, attachment, proportions and motion, and attempt targeted repair on failure. Record which parts were inferred and keep failed results as candidates. An intentional design feature or valid unusual anatomy must survive the same checks.
+
+### Artistic intelligence and saved transformation rules
+
+- Foundry makes and evaluates artistic decisions about silhouette, proportions, visual hierarchy, materials, detail placement and consistency with the selected style. Learn from approved references, outputs, corrections and rejected results. Keep reusable rules and any trained changes versioned, scoped, validated and reversible. Preserve approved originals.
+- Save reusable transformation profiles such as Alter, Berserker and Grand Convergence. A profile can hold general requirements, approved examples, visual and motion rules, and constraints. Keep character-specific overrides distinct from shared rules. When asked for a named form of a character, apply the saved profile to that character's approved identity and references, preserve defining features, and generate a finished variant that can be animated. Reuse an existing approved form when available. Store a newly generated form as a separate version with provenance and validation results. Keep creative form generation distinct from admission to NoWorld's canonical records and gameplay rules.
 
 Normal operation must be completely on phone, offline, without PC, subscriptions, paid APIs, external GPU or cloud inference. PC may compile the app. Reuse installed components and approved sources. Use measured Vulkan/QNN/ARM64 performance; never label a backend supported merely because the hardware exists. Long jobs need durable checkpoints, thermal and memory budgets, foreground notifications and recovery within Android limits.
 
@@ -14,7 +24,7 @@ Normal operation must be completely on phone, offline, without PC, subscriptions
 |---|---|---|
 | Universal engine | Category routing, AI reconstruction plus procedural geometry, anatomy/skeleton templates, UV/materials, rigging/skinning, LOD/collision | Six deterministic recipes and silhouette extrusion; no learned reconstruction |
 | Editable workspace | Geometry/shape, UV/material, rigs/morphs, motion, assembly and conversion | Editable recipe + binary mesh, orbit preview, recipe refinement, GLB export; full editor absent |
-| Koikatsu | Existing Android installation, exact card/mod source geometry, all body/face/hair/wardrobe/material/morph/rig data | Detect package and preserve card bytes; extraction absent |
+| Koikatsu | Optional intake for modifications unavailable in Koikatsu, preserving existing card/mod geometry, body/face/hair/wardrobe/material/morph/rig data | Detect package and preserve card bytes; extraction absent |
 | Quality | Multi-view visual reference comparison separated from topology, UV, skin, pose/morph, performance checks; local repair loops | Finite data/normals/rig hierarchy/weight and export format checks only |
 | Efficiency | Cheapest reliable route, exact reuse, regional repair, feature caches, dedup, unloading, coarse-to-fine, measured device backend selection | SHA-256 source/geometry cache, single worker and thermal/memory/storage pause thresholds |
 | Learning 1 | Persistent outcomes, sources, methods, parameters, timing, resources, checks, repairs and preferences | SQLite successful operation records and receipts; resource history, failures and preferences incomplete |
@@ -37,6 +47,8 @@ Normal operation must be completely on phone, offline, without PC, subscriptions
 6. Interrupted and resumed real job, including process termination recovery.
 7. Repeat production demonstrating useful reuse.
 8. NoWorld-compatible export admitted by genuine contract validation; native Unreal import/cook reported separately.
+
+The humanoid case must include completion of a cropped limb with coherent anatomy and playback on the finished rig. The reuse case must include saving a named transformation profile and applying it to another eligible character while retaining that character's identity. Exercise a finished animation, including a synchronized interaction where requested, on the exported asset. Test Koikatsu intake only with an asset that needs modifications outside Koikatsu.
 
 ## Preservation rules
 
