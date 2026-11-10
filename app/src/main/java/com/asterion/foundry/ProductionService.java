@@ -24,10 +24,13 @@ public final class ProductionService extends Service {
     private volatile String current;
     private int latestStart;
     static final String ORIGINAL_GLB = "Preserve original GLB";
+    static final String NOWORLD_GLB = "Check NoWorld GLB handoff";
     static final String VOLUME = "Image to 3D candidate";
     static final String DEPTH = "AI depth relief";
     static final String HULL = "Multi-view reconstruction";
     static final String REVISION = "Mesh revision";
+    static final String FORM = "Saved form variant";
+    static final String MOTION = "Skeletal animation";
 
     @Override public void onCreate() {
         super.onCreate();
@@ -139,8 +142,8 @@ public final class ProductionService extends Service {
         long start = SystemClock.elapsedRealtime();
         check();
         Map<String, File> originals = new SourceFiles(store.root).originals(request);
-        if (ORIGINAL_GLB.equals(kind)) {
-            preserveGlb(job, request, directory, originals.get("source"), originals.get("reference"), start);
+        if (ORIGINAL_GLB.equals(kind) || NOWORLD_GLB.equals(kind)) {
+            preserveGlb(job, request, directory, originals, start);
             return;
         }
         JSONObject sourceHashes = new JSONObject();
@@ -151,12 +154,24 @@ public final class ProductionService extends Service {
             signature.append('|').append(original.getKey()).append('=').append(hash);
             sourceHashes.put(original.getKey(), hash);
         }
-        if (VOLUME.equals(kind)) signature.append("|").append(TripoModels.VERSION);
+        String volumeWorkspace = null;
+        if (VOLUME.equals(kind)) {
+            signature.append('|').append(TripoModels.VERSION);
+            volumeWorkspace = FilesUtil.hash(signature.toString());
+            signature.append('|').append(TriplaneMesh.PIPELINE_VERSION);
+        }
         if (DEPTH.equals(kind)) signature.append("|depth-relief-v1|").append(MidasDepth.SHA256);
         if (HULL.equals(kind)) signature.append('|').append(VisualHull.METHOD);
-        if (REVISION.equals(kind)) {
-            signature.append("|revision-v1|").append(request.getString("parent_mesh_sha256"))
-                    .append('|').append(request.getJSONArray("axes")).append('|').append(request.opt("color"));
+        Base base = REVISION.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) ? base(request) : null;
+        if (base != null) {
+            signature.append("|derived-v2|").append(request.getString("parent_mesh_sha256"))
+                    .append('|').append(base.textureSha());
+            switch (kind) {
+                case FORM -> signature.append('|').append(request.getJSONObject("form"));
+                case MOTION -> signature.append('|').append(SkeletalMotion.VERSION).append('|')
+                        .append(request.optString("motion_script", request.optString("motion_intent")));
+                default -> signature.append('|').append(request.getJSONArray("axes")).append('|').append(request.opt("color"));
+            }
         }
         String key = FilesUtil.hash(signature.toString());
         FilesUtil.write(new File(directory, "project.json"), request.toString(2));
@@ -171,7 +186,7 @@ public final class ProductionService extends Service {
         Candidate candidate = readCandidate(checkpoint, checkpointMetrics, texture, kind);
         if (candidate == null) candidate = readCandidate(cache, cacheMetrics, cacheTexture, kind);
         boolean reused = candidate != null;
-        if (!reused) candidate = generate(request, originals, directory, key, id);
+        if (!reused) candidate = generate(request, originals, directory, volumeWorkspace, id, base);
         if (candidate.texture != null) {
             FilesUtil.write(texture, candidate.texture);
             candidate.metrics.put("texture_sha256", FilesUtil.hash(texture));
@@ -191,7 +206,20 @@ public final class ProductionService extends Service {
         stage(id, 2, "Auditing topology and writing GLB");
         GeometryAudit.Result audit = GeometryAudit.inspect(candidate.mesh, this::check);
         File asset = new File(directory, "asset.glb");
-        Glb.write(candidate.mesh, asset, candidate.texture);
+        JSONObject motionEvidence = null;
+        if (MOTION.equals(kind)) {
+            String script = request.has("motion_script") ? request.getString("motion_script")
+                    : SkeletalMotion.compose(candidate.mesh, request.getString("motion_intent"));
+            SkeletalMotion clip = SkeletalMotion.parse(candidate.mesh, script);
+            SkeletalMotion.Validation validation = Glb.write(candidate.mesh, asset, candidate.texture, clip);
+            File editableMotion = new File(directory,"motion.foundry.txt");
+            FilesUtil.write(editableMotion,script);
+            motionEvidence = new JSONObject(validation.json()).put("editable_script_sha256",FilesUtil.hash(editableMotion))
+                    .put("method",request.has("motion_script") ? "authored_local_joint_tracks" : "deterministic_motion_composition")
+                    .put("visual_playback_validation", "not_performed");
+        } else {
+            Glb.write(candidate.mesh, asset, candidate.texture);
+        }
         stage(id, 3, "Writing validation receipt");
         JSONObject receipt = new JSONObject(candidate.mesh.validate())
                 .put("schema", "asterion.foundry.receipt.v1")
@@ -216,8 +244,14 @@ public final class ProductionService extends Service {
                 .put("rig_validation", VOLUME.equals(kind) ? "unrigged" : candidate.mesh.bones.isEmpty()
                         ? "not_applicable" : "hierarchy_and_normalized_rigid_weights_only");
         if (candidate.texture != null) receipt.put("texture_sha256", candidate.metrics.getString("texture_sha256"));
-        if (REVISION.equals(kind)) {
+        if (motionEvidence != null) receipt.put("motion",motionEvidence);
+        if (base != null) {
             receipt.put("parent_mesh_sha256", request.getString("parent_mesh_sha256"));
+        }
+        if (FORM.equals(kind)) {
+            receipt.put("form",request.getJSONObject("form"))
+                    .put("form_generation", "deterministic_proportions_and_material_tint")
+                    .put("canonical_form_admitted", false);
         }
         if (audit != null) {
             receipt.put("topology", new JSONObject()
@@ -246,9 +280,12 @@ public final class ProductionService extends Service {
         }
     }
 
-    private void preserveGlb(JSONObject job, JSONObject request, File directory, File source,
-                             File reference, long start) throws Exception {
+    private void preserveGlb(JSONObject job, JSONObject request, File directory, Map<String, File> originals,
+                             long start) throws Exception {
         String id = job.getString("id");
+        String kind = request.getString("kind");
+        File source = originals.get("source");
+        File reference = originals.get("reference");
         if (source == null) throw new IOException("Choose a self-contained original GLB");
         if (reference != null) {
             File matched = new ReferenceRegistry(store.root).find(reference.getName());
@@ -256,6 +293,17 @@ public final class ProductionService extends Service {
         }
         stage(id, job.getInt("stage"), "Inspecting original GLB container");
         JSONObject inventory = OriginalGlb.inspect(source);
+        JSONObject handoff = null;
+        if (NOWORLD_GLB.equals(kind)) {
+            File profile = originals.get("contract");
+            if (profile == null) throw new IOException("Choose the NoWorld GLB handoff profile");
+            stage(id, job.getInt("stage"), "Checking the declared NoWorld source profile");
+            handoff = NoWorldHandoff.validate(source,profile);
+            if (!profile.getName().equals(handoff.getString("profile_sha256"))
+                    || !source.getName().equals(handoff.getString("source_sha256"))) {
+                throw new IOException("NoWorld inputs changed during validation");
+            }
+        }
         FilesUtil.write(new File(directory, "project.json"), request.toString(2));
         File asset = new File(directory, "asset.glb");
         boolean reused = asset.isFile() && FilesUtil.hash(asset).equals(source.getName());
@@ -272,7 +320,7 @@ public final class ProductionService extends Service {
             throw new Paused("Original GLB checkpoint saved. Resume to publish the receipt.");
         }
         JSONObject receipt = new JSONObject().put("schema", "asterion.foundry.receipt.v1")
-                .put("job", id).put("recipe", ORIGINAL_GLB).put("source_sha256", source.getName())
+                .put("job", id).put("recipe", kind).put("source_sha256", source.getName())
                 .put("asset_sha256", source.getName()).put("outcome", "complete")
                 .put("source_bytes_preserved", true).put("inventory", inventory)
                 .put("reused", reused).put("duration_ms", SystemClock.elapsedRealtime() - start)
@@ -283,16 +331,43 @@ public final class ProductionService extends Service {
                     .put("association_provenance", "user_registered")
                     .put("geometry_generated", false);
         }
+        if (handoff != null) receipt.put("noworld_source_profile",handoff);
         FilesUtil.write(new File(directory, "receipt.json"), receipt.toString(2));
         FilesUtil.write(new File(directory, "import-manifest.json"), new JSONObject()
                 .put("schema", "asterion.foundry.intermediate.v1")
                 .put("asset", "asset.glb").put("sha256", source.getName())
                 .put("native_acceptance", false).put("source_bytes_preserved", true).toString(2));
-        store.finish(id, ORIGINAL_GLB, SystemClock.elapsedRealtime() - start, reused, receipt);
+        store.finish(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
     }
 
     private record Candidate(Mesh mesh, JSONObject metrics, byte[] texture) {
         Candidate(Mesh mesh, JSONObject metrics) { this(mesh,metrics,null); }
+    }
+
+    private record Base(File mesh, File texture, String textureSha) {
+        byte[] textureBytes() throws IOException {
+            return texture == null ? null : Files.readAllBytes(texture.toPath());
+        }
+    }
+
+    private Base base(JSONObject request) throws Exception {
+        String parent = request.getString("parent");
+        if (!"complete".equals(store.job(parent).getString("state"))) {
+            throw new IOException("The base must be a completed editable project");
+        }
+        File directory = store.project(parent);
+        File mesh = new File(directory,"checkpoint.mesh");
+        String expected = request.getString("parent_mesh_sha256");
+        JSONObject receipt = new JSONObject(Files.readString(new File(directory,"receipt.json").toPath()));
+        if (!expected.equals(receipt.optString("editable_mesh_sha256")) || !expected.equals(FilesUtil.hash(mesh))) {
+            throw new IOException("Base geometry checksum does not match");
+        }
+        String textureSha = receipt.optString("texture_sha256");
+        File texture = textureSha.isEmpty() ? null : new File(directory,"base-color.png");
+        if (texture != null && !textureSha.equals(FilesUtil.hash(texture))) {
+            throw new IOException("Base texture checksum does not match");
+        }
+        return new Base(mesh, texture, textureSha);
     }
 
     private static Candidate readCandidate(File mesh, File metrics, File texture, String kind) {
@@ -301,7 +376,8 @@ public final class ProductionService extends Service {
             JSONObject evidence = metrics.isFile()
                     ? new JSONObject(Files.readString(metrics.toPath())) : new JSONObject();
             if (HULL.equals(kind) && !evidence.has("texture_sha256")) return null;
-            if (VOLUME.equals(kind) && !TripoModels.VERSION.equals(evidence.optString("model_pack"))) return null;
+            if (VOLUME.equals(kind) && (!TripoModels.VERSION.equals(evidence.optString("model_pack"))
+                    || !TriplaneMesh.PIPELINE_VERSION.equals(evidence.optString("pipeline")))) return null;
             byte[] image = null;
             if (evidence.has("texture_sha256")) {
                 if (!evidence.getString("texture_sha256").equals(FilesUtil.hash(texture))) return null;
@@ -313,7 +389,7 @@ public final class ProductionService extends Service {
         }
     }
 
-    private Candidate generate(JSONObject request, Map<String, File> files, File directory, String key, String id) throws Exception {
+    private Candidate generate(JSONObject request, Map<String, File> files, File directory, String volumeWorkspace, String id, Base base) throws Exception {
         String kind = request.getString("kind");
         float scale = (float) request.getDouble("scale");
         int detail = request.getInt("detail");
@@ -324,7 +400,7 @@ public final class ProductionService extends Service {
             if (available.availMem < 3L * 1024 * 1024 * 1024) {
                 throw new Paused("3D reconstruction requires at least 3 GiB available RAM");
             }
-            File workspace = new File(directory, "volume-" + key);
+            File workspace = new File(directory, "volume-" + volumeWorkspace);
             Files.createDirectories(workspace.toPath());
             SourceFiles.Raster input = SourceFiles.decode(files.get("source"), 1024);
             TriplaneMesh.Result result = TriplaneMesh.reconstruct(TripoModels.directory(store.root), workspace,
@@ -332,7 +408,9 @@ public final class ProductionService extends Service {
                     message -> store.state(id, "running", 0, message));
             return new Candidate(result.mesh(), new JSONObject()
                     .put("method", "learned_triplane_density")
-                    .put("model_pack", TripoModels.VERSION).put("grid_resolution", result.cells())
+                    .put("model_pack", TripoModels.VERSION).put("pipeline",TriplaneMesh.PIPELINE_VERSION)
+                    .put("reference_view",new JSONObject(result.referenceView().evidence()))
+                    .put("grid_resolution", result.cells())
                     .put("generation_ms", result.millis()).put("inferred_occluded_geometry", true)
                     .put("triplane_checkpoint_reused", result.reusedPlanes())
                     .put("density_checkpoint_reused", result.reusedField())
@@ -377,28 +455,26 @@ public final class ProductionService extends Service {
             }
         }
         if (REVISION.equals(kind)) {
-            String parent = request.getString("parent");
-            if (!"complete".equals(store.job(parent).getString("state"))) {
-                throw new IOException("Revision parent is not a completed project");
-            }
-            File mesh = new File(store.project(parent), "checkpoint.mesh");
-            if (!FilesUtil.hash(mesh).equals(request.getString("parent_mesh_sha256"))) {
-                throw new IOException("Revision parent checksum changed");
-            }
             JSONArray axes = request.getJSONArray("axes");
-            JSONObject parentReceipt = new JSONObject(Files.readString(
-                    new File(store.project(parent),"receipt.json").toPath()));
-            byte[] texture = null;
-            if (parentReceipt.has("texture_sha256")) {
-                File originalTexture = new File(store.project(parent),"base-color.png");
-                if (!parentReceipt.getString("texture_sha256").equals(FilesUtil.hash(originalTexture))) {
-                    throw new IOException("Revision parent texture failed checksum verification");
-                }
-                texture = Files.readAllBytes(originalTexture.toPath());
-            }
-            return new Candidate(MeshRevision.apply(Mesh.load(mesh), (float) axes.getDouble(0),
+            return new Candidate(MeshRevision.apply(Mesh.load(base.mesh()), (float) axes.getDouble(0),
                     (float) axes.getDouble(1), (float) axes.getDouble(2),
-                    request.has("color") ? request.getInt("color") : null), new JSONObject(), texture);
+                    request.has("color") ? request.getInt("color") : null), new JSONObject(), base.textureBytes());
+        }
+        if (FORM.equals(kind)) {
+            JSONObject snapshot = request.getJSONObject("form");
+            String scope = snapshot.getString("scope");
+            String parentScope = FilesUtil.hash(request.getString("parent") + "|" + request.getString("parent_mesh_sha256"));
+            if (!scope.isEmpty() && !scope.equals(parentScope)) {
+                throw new IOException("Saved form is scoped to a different base mesh");
+            }
+            FormLibrary.Rule rule = new FormLibrary.Rule((float) snapshot.getDouble("x"),
+                    (float) snapshot.getDouble("y"),(float) snapshot.getDouble("z"), snapshot.getInt("tone"),
+                    (float) snapshot.getDouble("strength"),snapshot.getBoolean("protect_head"));
+            new FormLibrary.Profile(snapshot.getString("name"),scope,snapshot.getInt("version"),rule);
+            return new Candidate(rule.apply(Mesh.load(base.mesh())), new JSONObject(), base.textureBytes());
+        }
+        if (MOTION.equals(kind)) {
+            return new Candidate(Mesh.load(base.mesh()), new JSONObject(), base.textureBytes());
         }
         if ("Image silhouette".equals(kind)) {
             SourceFiles.Raster image = SourceFiles.decode(files.get("source"), 96);
@@ -419,6 +495,8 @@ public final class ProductionService extends Service {
             case VOLUME -> "triposr_volume_surface_vertex_colour";
             case DEPTH -> "midas_relative_depth_relief_v1";
             case REVISION -> "non_destructive_mesh_revision";
+            case FORM -> "saved_form_rule_v1";
+            case MOTION -> SkeletalMotion.VERSION;
             case "Image silhouette" -> "deterministic_2_5d_extrusion";
             case "OBJ geometry" -> "triangulated_OBJ_geometry_only";
             default -> "parametric_recipe";

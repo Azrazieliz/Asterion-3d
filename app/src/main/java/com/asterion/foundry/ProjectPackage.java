@@ -48,6 +48,13 @@ final class ProjectPackage {
                 }
                 add(zip,"base-color.png",texture);
             }
+            if (receipt.has("motion")) {
+                File script = new File(directory,"motion.foundry.txt");
+                if (!receipt.getJSONObject("motion").getString("editable_script_sha256").equals(FilesUtil.hash(script))) {
+                    throw new IOException("Editable animation checksum does not match its receipt");
+                }
+                add(zip,"motion.foundry.txt",script);
+            }
             Set<String> written = new HashSet<>();
             for (File file : originals.values()) {
                 if (written.add(file.getName())) add(zip, "sources/" + file.getName(), file);

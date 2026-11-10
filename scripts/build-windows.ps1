@@ -28,7 +28,7 @@ if($LASTEXITCODE -ne 0){throw 'GLB validation failed'}
 Pop-Location
 & "$tools\aapt2.exe" compile --dir "$src\res" -o "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'Resources failed'}
-& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 3 --version-name '0.3.0-volume-research' -0 tflite -A "$native\assets" "$build\res.zip"
+& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 4 --version-name '0.4.0-production-evaluation' -0 tflite -A "$native\assets" "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'AAPT failed'}
 $classFiles=@(Get-ChildItem "$build\classes" -Recurse -Filter '*.class' | ForEach-Object {$_.FullName})
 & "$tools\d8.bat" --release --min-api 29 --lib $android --output "$build\dex" @classFiles @jars
@@ -37,7 +37,7 @@ if($LASTEXITCODE -ne 0){throw 'D8 failed'}
 if($LASTEXITCODE -ne 0){throw 'DEX insertion failed'}
 & "$tools\zipalign.exe" -f -P 16 4 "$build\unsigned.apk" "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Alignment failed'}
-$apk="$root\dist\AsterionFoundry-v0.3.0-RESEARCH.apk"
+$apk="$root\dist\AsterionFoundry-v0.4.0-EVALUATION.apk"
 & "$tools\apksigner.bat" sign --ks "$env:USERPROFILE\.android\debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out $apk "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Signature failed'}
 & "$tools\apksigner.bat" verify --verbose $apk

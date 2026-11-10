@@ -4,14 +4,15 @@ public final class MainActivity extends Activity {
  final int BG=0xff10141e,PANEL=0xff1b2432,INK=0xffeff5f7,MUTED=0xffa7b6c8,ACCENT=0xff83e5c6;
  Store store;LinearLayout body;TextView status;Spinner kind;EditText prompt,scale;String source="",page="Create",exportId, nextRecipe, filter=""; final Map<String,String> references = new LinkedHashMap<>();MeshView preview;Handler handler=new Handler();boolean visible;
  static final String KNOWN = "Find registered original";
- String bindingReference;
- final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Quadruped template","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME,KNOWN};
- public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}if(!ProductionService.active)store.recover();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show("Create");if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
+ String bindingReference, handoffProfile;
+ Button motionPlaybackButton;
+ final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Quadruped template","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME,KNOWN};
+ public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}if(!ProductionService.active)store.recover();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show("Create");if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
  void label(String v){body.addView(text(v,14,MUTED));}
  Button button(String name,Runnable action){Button b=new Button(this);b.setText(name);b.setTextColor(INK);b.setAllCaps(false);GradientDrawable d=new GradientDrawable();d.setColor(PANEL);d.setCornerRadius(dp(12));b.setBackground(d);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(48));p.setMargins(0,dp(5),0,dp(5));body.addView(b,p);b.setOnClickListener(v->{try{action.run();}catch(Exception e){error(e);}});return b;}
- void show(String dest){if(preview!=null){preview.onPause();preview=null;}page=dest;LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setBackgroundColor(BG);root.setPadding(dp(18),dp(12),dp(18),dp(12));TextView title=text("ASTERION  /  FOUNDRY",14,ACCENT);root.addView(title);HorizontalScrollView nav=new HorizontalScrollView(this);LinearLayout row=new LinearLayout(this);for(String p:new String[]{"Create","Projects","Studio","Library","Queue","Koikatsu","Performance"}){TextView tab=text(p,15,p.equals(dest)?ACCENT:MUTED);tab.setPadding(dp(10),dp(8),dp(10),dp(8));tab.setOnClickListener(v->show(p));row.addView(tab);}nav.addView(row);root.addView(nav);ScrollView scroll=new ScrollView(this);body=new LinearLayout(this);body.setOrientation(1);scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);body.addView(text(dest,30,INK));try{switch(dest){case "Create":create();break;case "Projects":projects(false);break;case "Studio":studio();break;case "Library":library();break;case "Queue":projects(true);break;case "Koikatsu":kk();break;case "Performance":performance();break;}}catch(Exception e){error(e);}}
+ void show(String dest){if(preview!=null){preview.onPause();preview=null;}motionPlaybackButton=null;page=dest;LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setBackgroundColor(BG);root.setPadding(dp(18),dp(12),dp(18),dp(12));TextView title=text("ASTERION  /  FOUNDRY",14,ACCENT);root.addView(title);HorizontalScrollView nav=new HorizontalScrollView(this);LinearLayout row=new LinearLayout(this);for(String p:new String[]{"Create","Projects","Studio","Library","Queue","Koikatsu","Performance"}){TextView tab=text(p,15,p.equals(dest)?ACCENT:MUTED);tab.setPadding(dp(10),dp(8),dp(10),dp(8));tab.setOnClickListener(v->show(p));row.addView(tab);}nav.addView(row);root.addView(nav);ScrollView scroll=new ScrollView(this);body=new LinearLayout(this);body.setOrientation(1);scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);body.addView(text(dest,30,INK));try{switch(dest){case "Create":create();break;case "Projects":projects(false);break;case "Studio":studio();break;case "Library":library();break;case "Queue":projects(true);break;case "Koikatsu":kk();break;case "Performance":performance();break;}}catch(Exception e){error(e);}}
  void create() {
   label("Offline production");
   prompt = new EditText(this);
@@ -60,8 +61,12 @@ public final class MainActivity extends Activity {
        label("Bundled MiDaS estimates the visible surface. Output has a flat backing and relative depth.");
       }
       Button control = button(originalLabel(), () -> pick(1,
-              ("OBJ geometry".equals(selected) || ProductionService.ORIGINAL_GLB.equals(selected)) ? "*/*" : "image/*"));
+              ("OBJ geometry".equals(selected) || originalGlbMode(selected)) ? "*/*" : "image/*"));
       control.setTag("source");
+      if (ProductionService.NOWORLD_GLB.equals(selected)) {
+       label("Match a self-contained GLB against a declared NoWorld source profile. Unreal import runs separately.");
+       button(handoffLabel(), () -> pick(23,"*/*")).setTag("contract");
+      }
      } else if (selected.endsWith("template")) {
       label("Generates a rig template. Use multi-view reconstruction for reference-shaped geometry.");
      }
@@ -77,7 +82,15 @@ public final class MainActivity extends Activity {
 
  private static boolean needsOriginal(String recipe) {
   return KNOWN.equals(recipe) || "Image silhouette".equals(recipe) || "OBJ geometry".equals(recipe)
-          || ProductionService.VOLUME.equals(recipe) || ProductionService.DEPTH.equals(recipe) || ProductionService.ORIGINAL_GLB.equals(recipe);
+          || ProductionService.VOLUME.equals(recipe) || ProductionService.DEPTH.equals(recipe) || originalGlbMode(recipe);
+ }
+
+ private static boolean originalGlbMode(String recipe) {
+  return ProductionService.ORIGINAL_GLB.equals(recipe) || ProductionService.NOWORLD_GLB.equals(recipe);
+ }
+
+ private String handoffLabel() {
+  return (handoffProfile == null ? "Choose" : "Replace") + " NoWorld JSON profile";
  }
 
  private String viewLabel(String role) {
@@ -140,6 +153,10 @@ public final class MainActivity extends Activity {
      request.put(reference.getKey(), reference.getValue());
     }
    }
+   if (ProductionService.NOWORLD_GLB.equals(selected)) {
+    if (handoffProfile == null) throw new IllegalArgumentException("Choose the NoWorld JSON profile");
+    request.put("contract",handoffProfile);
+   }
    enqueue(request);
   } catch (Exception failure) {
    error(failure);
@@ -172,6 +189,10 @@ public final class MainActivity extends Activity {
 
  private void library() throws Exception {
   button("Register reference and original GLB", () -> pick(21,"image/*"));
+  button("Save shared form rules", () -> formEditor("", null));
+  for (FormLibrary.Profile profile : new FormLibrary(store.root).available("")) {
+   button(profile.name() + " · rules v" + profile.revision(), () -> formEditor("", profile));
+  }
   EditText search = new EditText(this);
   search.setHint("Search completed assets");
   search.setSingleLine(true);
@@ -196,10 +217,11 @@ public final class MainActivity extends Activity {
   if (matches == 0) label("No matching completed assets");
  }
  void startQueue(){try{startForegroundService(new Intent(this,ProductionService.class));}catch(Exception e){error(e);}}
- void projects(boolean queue)throws Exception{label(queue?"Stages reflect completed writes. Interrupted jobs keep their geometry checkpoints.":"Editable projects and export packages. Sources remain immutable.");if(queue){button("Run queued jobs",this::startQueue);button("Pause after current stage",()->{if(ProductionService.active)startService(new Intent(this,ProductionService.class).setAction("pause"));});}button("Refresh",()->show(page));ArrayList<JSONObject> jobs=store.jobs();if(jobs.isEmpty())label("No projects yet. Create an asset to begin.");for(JSONObject j:jobs){JSONObject q=new JSONObject(j.getString("request"));String id=j.getString("id"),state=j.getString("state");body.addView(text(q.getString("kind"),21,INK));label(state.toUpperCase(Locale.ROOT)+" · "+j.getString("message"));if(!q.optString("description").isEmpty())label(q.optString("description"));if(state.equals("paused")||state.equals("failed"))button("Resume "+id.substring(0,6),()->{store.state(id,"queued",j.optInt("stage"),"Resume requested");startQueue();show("Queue");});if(new File(store.project(id),"checkpoint.mesh").exists())button("Inspect asset",()->inspect(id));if(state.equals("complete")){if(ProductionService.ORIGINAL_GLB.equals(q.optString("kind")))button("Inspect source inventory",()->inspect(id));button("Export editable package",()->{exportId=id;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.putExtra(Intent.EXTRA_TITLE,"Foundry-"+id.substring(0,8)+".zip");startActivityForResult(i,2);});button("Repeat using saved recipe",()->{try{store.enqueue(q);startQueue();show("Queue");}catch(Exception e){error(e);}});}label("────────────────────────");}}
+ void projects(boolean queue)throws Exception{label(queue?"Stages reflect completed writes. Interrupted jobs keep their geometry checkpoints.":"Editable projects and export packages. Sources remain immutable.");if(queue){button("Run queued jobs",this::startQueue);button("Pause after current stage",()->{if(ProductionService.active)startService(new Intent(this,ProductionService.class).setAction("pause"));});}button("Refresh",()->show(page));ArrayList<JSONObject> jobs=store.jobs();if(jobs.isEmpty())label("No projects yet. Create an asset to begin.");for(JSONObject j:jobs){JSONObject q=new JSONObject(j.getString("request"));String id=j.getString("id"),state=j.getString("state");body.addView(text(q.getString("kind"),21,INK));label(state.toUpperCase(Locale.ROOT)+" · "+j.getString("message"));if(!q.optString("description").isEmpty())label(q.optString("description"));if(state.equals("paused")||state.equals("failed"))button("Resume "+id.substring(0,6),()->{store.state(id,"queued",j.optInt("stage"),"Resume requested");startQueue();show("Queue");});if(new File(store.project(id),"checkpoint.mesh").exists())button("Inspect asset",()->inspect(id));if(state.equals("complete")){if(originalGlbMode(q.optString("kind")))button("Inspect source inventory",()->inspect(id));button("Export editable package",()->{exportId=id;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.putExtra(Intent.EXTRA_TITLE,"Foundry-"+id.substring(0,8)+".zip");startActivityForResult(i,2);});button("Repeat using saved recipe",()->{try{store.enqueue(q);startQueue();show("Queue");}catch(Exception e){error(e);}});}label("────────────────────────");}}
  void inspect(String id) {
   try {
    if (preview != null) { preview.onPause(); preview = null; }
+   motionPlaybackButton = null;
    File directory = store.project(id);
    if (!new File(directory, "checkpoint.mesh").isFile()) {
     body.removeAllViews();
@@ -210,20 +232,49 @@ public final class MainActivity extends Activity {
     return;
    }
    Mesh mesh = Mesh.load(new File(store.project(id), "checkpoint.mesh"));
+   JSONObject row = store.job(id);
+   JSONObject request = new JSONObject(row.getString("request"));
+   boolean complete = "complete".equals(row.getString("state"));
+   JSONObject receipt = complete ? new JSONObject(java.nio.file.Files.readString(
+           new File(directory,"receipt.json").toPath())) : null;
+   SkeletalMotion motion = null;
+   String motionScript = "";
+   if (complete && ProductionService.MOTION.equals(request.getString("kind"))) {
+    File script = new File(directory,"motion.foundry.txt");
+    if (!receipt.getJSONObject("motion").getString("editable_script_sha256").equals(FilesUtil.hash(script))) {
+     throw new IOException("Saved motion failed its checksum");
+    }
+    motionScript = java.nio.file.Files.readString(script.toPath());
+    motion = SkeletalMotion.parse(mesh,motionScript);
+   }
    body.removeAllViews();
    body.addView(text("Inspect asset",28,INK));
-   preview = new MeshView(this, mesh, new File(directory,"base-color.png"));
+   preview = new MeshView(this, mesh, new File(directory,"base-color.png"), motion);
    body.addView(preview,new LinearLayout.LayoutParams(-1,dp(330)));
    label("Drag to orbit · " + mesh.vertices.size()/3 + " triangles · " + mesh.bones.size() + " bones");
    button("Front", () -> preview.view(0,0));
    button("Right", () -> preview.view(-90,0));
    button("Back", () -> preview.view(180,0));
    button("Top", () -> preview.view(0,85));
-   JSONObject row = store.job(id);
-   JSONObject request = new JSONObject(row.getString("request"));
-   if ("complete".equals(row.getString("state"))) {
+   if (motion != null) {
+    label(motion.name() + " · " + motion.durationSeconds() + " seconds");
+    motionPlaybackButton = button("Play animation", () -> motionPlaybackButton.setText(
+            preview.toggleMotion() ? "Pause animation" : "Play animation"));
+   }
+   if (complete) {
     button("Create editable revision", () -> revisionDialog(id, request));
     button("Export editable package", () -> export(id));
+    if (!mesh.bones.isEmpty()) {
+     String baseSha = receipt.getString("editable_mesh_sha256");
+     String formScope = FilesUtil.hash(id + "|" + baseSha);
+     button("Create a form from saved rules", () -> chooseForm(id, baseSha, formScope, request.optString("description")));
+     button("Save form rules for this base", () -> formEditor(formScope, null));
+     button("Create animation", () -> motionDialog(id,baseSha,null));
+     if (motion != null) {
+      String editable = motionScript;
+      button("Edit animation tracks", () -> motionDialog(id,baseSha,editable));
+     }
+    }
    }
    if (ProductionService.HULL.equals(request.getString("kind")) && request.getInt("detail") < 64) {
     button("Reconstruct at finer resolution", () -> {
@@ -233,8 +284,8 @@ public final class MainActivity extends Activity {
      } catch (Exception failure) { error(failure); }
     });
    }
-   File receipt = new File(store.project(id), "receipt.json");
-   if (receipt.isFile()) label(java.nio.file.Files.readString(receipt.toPath()));
+   File receiptFile = new File(directory, "receipt.json");
+   if (receiptFile.isFile()) label(java.nio.file.Files.readString(receiptFile.toPath()));
    button("Back to projects", () -> show("Projects"));
   } catch (Exception failure) { error(failure); }
  }
@@ -246,6 +297,102 @@ public final class MainActivity extends Activity {
   intent.addCategory(Intent.CATEGORY_OPENABLE);
   intent.putExtra(Intent.EXTRA_TITLE, "Foundry-" + id.substring(0,8) + ".zip");
   startActivityForResult(intent,2);
+ }
+
+ private void chooseForm(String id, String baseSha, String formScope, String baseName) {
+  try {
+   List<FormLibrary.Profile> forms = new FormLibrary(store.root).available(formScope);
+   if (forms.isEmpty()) throw new IOException("Save shared form rules in Library or rules for this base first");
+   String[] choices = forms.stream().map(profile -> profile.name() + " · v" + profile.revision()
+           + (profile.baseMeshSha().isEmpty() ? " · shared" : " · this base")).toArray(String[]::new);
+   new AlertDialog.Builder(this).setTitle("Choose a saved form").setItems(choices, (dialog, selected) -> {
+    try {
+     FormLibrary.Profile profile = forms.get(selected);
+     FormLibrary.Rule rule = profile.rule();
+     JSONObject snapshot = new JSONObject().put("name",profile.name()).put("scope",profile.baseMeshSha())
+             .put("version",profile.revision()).put("x",rule.x()).put("y",rule.y()).put("z",rule.z())
+             .put("tone",rule.tone()).put("strength",rule.strength()).put("protect_head",rule.preserveHead());
+     enqueue(new JSONObject().put("kind",ProductionService.FORM).put("parent",id)
+             .put("parent_mesh_sha256",baseSha).put("form",snapshot).put("scale",1).put("detail",12)
+             .put("description",baseName.isBlank() ? profile.name() : baseName + " · " + profile.name()));
+    } catch (Exception failure) { error(failure); }
+   }).show();
+  } catch (Exception failure) { error(failure); }
+ }
+
+ private void motionDialog(String id, String baseSha, String editable) {
+  boolean tracks = editable != null;
+  EditText input = new EditText(this);
+  if (tracks) {
+   input.setText(editable);
+   input.setMaxLines(12);
+  } else {
+   input.setSingleLine(true);
+   input.setHint("Idle, walk in place, or tail wag");
+  }
+  AlertDialog dialog = new AlertDialog.Builder(this).setTitle(tracks ? "Edit animation tracks" : "Create animation")
+          .setMessage(tracks ? "Edit local joint keyframes and optional contact checks."
+                  : "Use a supported movement for this rig. Walk is an in-place cycle on the Foundry humanoid rig.")
+          .setView(input).setNegativeButton("Cancel",null).setPositiveButton("Create clip",null).create();
+  dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+   try {
+    String value = input.getText().toString().trim();
+    int limit = tracks ? SkeletalMotion.MAX_SCRIPT_CHARS : 80;
+    if (value.isEmpty() || value.length() > limit) throw new IllegalArgumentException("Enter a supported animation");
+    enqueue(new JSONObject().put("kind",ProductionService.MOTION).put("parent",id)
+            .put("parent_mesh_sha256",baseSha).put(tracks ? "motion_script" : "motion_intent",value)
+            .put("description",tracks ? "Edited animation" : value).put("scale",1).put("detail",12));
+    dialog.dismiss();
+   } catch (Exception failure) { error(failure); }
+  }));
+  dialog.show();
+ }
+
+ private void formEditor(String scope, FormLibrary.Profile existing) {
+  FormLibrary.Rule rule = existing == null ? new FormLibrary.Rule(1,1,1,0xffffff,0,true) : existing.rule();
+  LinearLayout fields = new LinearLayout(this);
+  fields.setOrientation(1);
+  fields.setPadding(dp(20),0,dp(20),0);
+  TextView context = text(scope.isEmpty() ? "Reusable on compatible rigged meshes" : "Overrides the shared rule for this exact base mesh",14,INK);
+  fields.addView(context);
+  EditText name = formField(fields,"Form name",existing == null ? "" : existing.name());
+  if (existing != null) name.setEnabled(false);
+  EditText width = formField(fields,"Width multiplier",Float.toString(rule.x()));
+  EditText height = formField(fields,"Height multiplier",Float.toString(rule.y()));
+  EditText depth = formField(fields,"Depth multiplier",Float.toString(rule.z()));
+  EditText tone = formField(fields,"Tint #RRGGBB",String.format(Locale.ROOT,"#%06X",rule.tone()));
+  EditText strength = formField(fields,"Tint strength (0–1)",Float.toString(rule.strength()));
+  CheckBox protect = new CheckBox(this);
+  protect.setText("Keep colours on head and face joints");
+  protect.setChecked(rule.preserveHead());
+  fields.addView(protect);
+  ScrollView scroll = new ScrollView(this);
+  scroll.addView(fields);
+  AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Save form rules").setView(scroll)
+          .setNegativeButton("Cancel",null).setPositiveButton("Save version",null).create();
+  dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+   try {
+    String rgb = tone.getText().toString().trim();
+    if (!rgb.matches("#[0-9a-fA-F]{6}")) throw new IllegalArgumentException("Use #RRGGBB for tint");
+    FormLibrary.Rule updated = new FormLibrary.Rule(Float.parseFloat(width.getText().toString()),
+            Float.parseFloat(height.getText().toString()),Float.parseFloat(depth.getText().toString()),
+            Color.parseColor(rgb) & 0xffffff,Float.parseFloat(strength.getText().toString()),protect.isChecked());
+    FormLibrary.Profile saved = new FormLibrary(store.root).save(name.getText().toString(),scope,updated);
+    dialog.dismiss();
+    Toast.makeText(this,saved.name() + " rules saved · v" + saved.revision(),Toast.LENGTH_LONG).show();
+    if ("Library".equals(page)) show("Library");
+   } catch (Exception failure) { error(failure); }
+  }));
+  dialog.show();
+ }
+
+ private EditText formField(LinearLayout fields, String caption, String value) {
+  fields.addView(text(caption,14,INK));
+  EditText entry = new EditText(this);
+  entry.setSingleLine(true);
+  entry.setText(value);
+  fields.addView(entry);
+  return entry;
  }
 
  private void revisionDialog(String id, JSONObject original) {
@@ -316,6 +463,7 @@ public final class MainActivity extends Activity {
   state.putString("source",source);
   state.putString("exportId",exportId);
   state.putString("bindingReference",bindingReference);
+  state.putString("handoffProfile",handoffProfile);
   for (Map.Entry<String,String> entry : references.entrySet()) state.putString(entry.getKey(),entry.getValue());
  }
 
@@ -369,12 +517,18 @@ public final class MainActivity extends Activity {
      runOnUiThread(() -> Toast.makeText(this,"Editable package exported",Toast.LENGTH_LONG).show());
      return;
     }
-    if (code != 1 && code != 3 && (code < 11 || code > 13)) return;
+    if (code != 1 && code != 3 && code != 23 && (code < 11 || code > 13)) return;
     File original;
     try (InputStream input = getContentResolver().openInputStream(uri)) {
      original = new SourceFiles(store.root).preserve(input);
     }
     runOnUiThread(() -> {
+     if (code == 23) {
+      handoffProfile = original.getAbsolutePath();
+      Button control = (Button) body.findViewWithTag("contract");
+      if (control != null) control.setText(handoffLabel());
+      return;
+     }
      if (code == 3) {
       new AlertDialog.Builder(this).setTitle("Original card preserved")
               .setMessage("SHA-256: " + original.getName() + "\nGeometry extraction remains unavailable.")
@@ -394,5 +548,5 @@ public final class MainActivity extends Activity {
  }
  void error(Exception e){new AlertDialog.Builder(this).setTitle("Operation could not finish").setMessage(e.getMessage()==null?e.toString():e.getMessage()).setPositiveButton("OK",null).show();}
  @Override protected void onResume(){super.onResume();if(preview!=null)preview.onResume();}
- @Override protected void onPause(){if(preview!=null)preview.onPause();super.onPause();}
+ @Override protected void onPause(){if(preview!=null)preview.onPause();if(motionPlaybackButton!=null)motionPlaybackButton.setText("Play animation");super.onPause();}
 }

@@ -4,21 +4,27 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtSession;
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
+import java.nio.file.Files;
 import java.util.Map;
 import java.util.Set;
 
 /** Local ORT CPU encoder and decoder, with reusable triplane and density checkpoints. */
 final class TriplaneMesh {
-    private static final int SIDE = 64, CHANNELS = 40, INPUT = 512, MASK = 1024;
+    static final String PIPELINE_VERSION = "triplane-reference-projection-v1";
+    private static final int SIDE = 64, CHANNELS = 40, INPUT = ReferenceView.FRAME_SIDE, MASK = 1024;
     private static final int PLANES = 3 * CHANNELS * SIDE * SIDE;
     private static final int BATCH = 4096;
+    private static final int FRAME_MAGIC = 0x46524d31;
     private static final float RADIUS = .87f, DENSITY = 25f;
 
     interface Progress { void update(String message); }
-    record Result(Mesh mesh, boolean reusedPlanes, boolean reusedField, int cells, long millis) {}
+    record Result(Mesh mesh, boolean reusedPlanes, boolean reusedField, int cells, long millis,
+                  ReferenceView.Result referenceView) {}
     private record Cutout(int width, int height, int[] pixels, float[] alpha,
                           int left, int top, int right, int bottom) {}
+    private record Frame(int[] argb, boolean cropped) {}
 
     static Result reconstruct(File models, File job, int[] pixels, int width, int height,
                               int cells, float metres, VisualHull.Budget budget,
@@ -32,15 +38,20 @@ final class TriplaneMesh {
         env.setTelemetry(false);
         File planesFile = new File(job,"triplane.f32");
         File fieldFile = new File(job,"density-" + cells + ".f32");
+        File frameFile = new File(job,"reference-frame.argb");
+        Frame frame = readFrame(frameFile);
+        if (frame == null) {
+            budget.check();
+            progress.update("Isolating subject");
+            frame = frame(cutout(env, models, pixels, width, height, budget));
+            writeFrame(frameFile, frame);
+        }
         float[] planes = read(planesFile,PLANES);
         boolean reusedPlanes = planes != null;
         if (planes == null) {
             budget.check();
-            progress.update("Isolating subject");
-            Cutout cutout = cutout(env, models, pixels, width, height, budget);
-            budget.check();
             progress.update("Encoding isolated subject into a 3D field");
-            float[] rgb = frame(cutout);
+            float[] rgb = composite(frame.argb);
             try (OrtSession session = open(env,models,TripoModels.ENCODER);
                  OnnxTensor input = OnnxTensor.createTensor(env,FloatBuffer.wrap(rgb),new long[]{1,3,INPUT,INPUT});
                  OrtSession.Result prediction = session.run(Map.of("image",input),Set.of("triplane"))) {
@@ -90,8 +101,11 @@ final class TriplaneMesh {
                     floats(output,"color",count*3,colors,offset*3);
                 }
             }
-            return new Result(surface.mesh(colors,metres,budget),reusedPlanes,reusedField,cells,
-                    (System.nanoTime()-start)/1_000_000);
+            progress.update("Comparing the reconstructed surface to the reference view");
+            ReferenceView.Evaluation evaluation = ReferenceView.evaluate(surface.positions, surface.triangles,
+                    colors, frame.argb, frame.cropped, budget);
+            return new Result(surface.mesh(evaluation.colors(),metres,budget),reusedPlanes,reusedField,cells,
+                    (System.nanoTime()-start)/1_000_000, evaluation.result());
         }
     }
 
@@ -200,24 +214,51 @@ final class TriplaneMesh {
         return new Cutout(width,height,pixels,alpha,left,top,right,bottom);
     }
 
-    private static float[] frame(Cutout cutout) {
+    private static Frame frame(Cutout cutout) {
         float side = Math.max(cutout.right-cutout.left+1,cutout.bottom-cutout.top+1)/.85f;
         float left = (cutout.left+cutout.right+1-side)/2;
         float top = (cutout.top+cutout.bottom+1-side)/2;
-        float[] rgb = new float[3*INPUT*INPUT];
+        int[] argb = new int[INPUT*INPUT];
         for(int y=0; y<INPUT; y++) for(int x=0; x<INPUT; x++) {
             int px=(int)Math.floor(left+(x+.5)*side/INPUT);
             int py=(int)Math.floor(top+(y+.5)*side/INPUT);
-            int color=0;
-            float alpha=0;
             if(px>=cutout.left&&px<=cutout.right&&py>=cutout.top&&py<=cutout.bottom) {
                 int i=py*cutout.width+px;
-                color=cutout.pixels[i];
-                alpha=cutout.alpha[i];
+                int alpha=Math.round(255*cutout.alpha[i]);
+                if (alpha > 0) argb[y*INPUT+x]=(alpha << 24) | (cutout.pixels[i] & 0xffffff);
             }
-            for (int c=0; c<3; c++) rgb[c*INPUT*INPUT+y*INPUT+x]=alpha*channel(color,c)+(1-alpha)*.5f;
+        }
+        boolean cropped = cutout.left == 0 || cutout.top == 0 || cutout.right == cutout.width - 1
+                || cutout.bottom == cutout.height - 1;
+        return new Frame(argb, cropped);
+    }
+
+    private static float[] composite(int[] argb) {
+        float[] rgb = new float[3*argb.length];
+        for (int i = 0; i < argb.length; i++) {
+            int color = argb[i];
+            float alpha = (color >>> 24) / 255f;
+            for (int c = 0; c < 3; c++) rgb[c*argb.length+i]=alpha*channel(color,c)+(1-alpha)*.5f;
         }
         return rgb;
+    }
+
+    private static Frame readFrame(File file) throws IOException {
+        if (!file.isFile() || file.length() != 8 + 4L * INPUT * INPUT) return null;
+        ByteBuffer data = ByteBuffer.wrap(Files.readAllBytes(file.toPath()));
+        if (data.remaining() != 8 + 4 * INPUT * INPUT || data.getInt() != FRAME_MAGIC) return null;
+        int flags = data.getInt();
+        if (flags != 0 && flags != 1) return null;
+        int[] pixels = new int[INPUT * INPUT];
+        data.asIntBuffer().get(pixels);
+        return new Frame(pixels, flags == 1);
+    }
+
+    private static void writeFrame(File file, Frame frame) throws IOException {
+        ByteBuffer data = ByteBuffer.allocate(8 + 4 * frame.argb.length);
+        data.putInt(FRAME_MAGIC).putInt(frame.cropped ? 1 : 0);
+        data.asIntBuffer().put(frame.argb);
+        FilesUtil.write(file, data.array());
     }
 
     private static float channel(int color,int index) {

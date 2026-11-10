@@ -49,8 +49,13 @@ public final class VolumetricAcceptance {
         } catch (InterruptedException expected) {
             System.out.println("Interrupted after triplane checkpoint");
         }
+        File referenceFrame = new File(job, "reference-frame.argb");
+        if (!referenceFrame.isFile()) throw new AssertionError("Reference frame was not checkpointed");
         TriplaneMesh.Result result = TriplaneMesh.reconstruct(new File(args[0]),job,pixels,width,height,112,1,
-                () -> {},System.out::println);
+                () -> {}, message -> {
+                    if (message.equals("Isolating subject")) throw new AssertionError("Reference frame was not reused");
+                    System.out.println(message);
+                });
         if (!result.reusedPlanes() || result.reusedField()) {
             throw new AssertionError("Resume failed to reuse triplanes");
         }
@@ -59,5 +64,6 @@ public final class VolumetricAcceptance {
                 + result.millis() + " ms during resume");
         GeometryAudit.Result trial = GeometryAudit.inspect(result.mesh(),() -> {});
         System.out.println("Candidate topology: " + trial);
+        System.out.println("Candidate reference-view evidence: " + result.referenceView().evidence());
     }
 }

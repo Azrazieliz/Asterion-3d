@@ -10,6 +10,33 @@ import org.json.JSONObject;
 /** Validate the self-contained GLB container without rewriting source rigs or materials. */
 final class OriginalGlb {
     static JSONObject inspect(File source) throws Exception {
+        JSONObject document = document(source);
+        JSONArray buffers = document.optJSONArray("buffers");
+        long bufferBytes = buffers == null || buffers.length() == 0
+                ? 0 : buffers.getJSONObject(0).getLong("byteLength");
+        JSONArray meshes = document.optJSONArray("meshes");
+        if (meshes == null || meshes.length() == 0) throw new IOException("GLB contains no meshes");
+        int primitives = 0;
+        int morphSlots = 0;
+        for (int i = 0; i < meshes.length(); i++) {
+            JSONArray parts = meshes.getJSONObject(i).getJSONArray("primitives");
+            primitives += parts.length();
+            for (int p = 0; p < parts.length(); p++) {
+                morphSlots += length(parts.getJSONObject(p).optJSONArray("targets"));
+            }
+        }
+        if (primitives == 0) throw new IOException("GLB contains no mesh primitives");
+        return new JSONObject().put("container", "GLB 2.0").put("embedded_buffer_bytes", bufferBytes)
+                .put("meshes", meshes.length()).put("primitives", primitives)
+                .put("skins", length(document.optJSONArray("skins")))
+                .put("morph_slots_by_primitive", morphSlots)
+                .put("materials", length(document.optJSONArray("materials")))
+                .put("animations", length(document.optJSONArray("animations")))
+                .put("extensions_used", document.optJSONArray("extensionsUsed"))
+                .put("validation", "container_and_embedded_buffer_ranges");
+    }
+
+    static JSONObject document(File source) throws Exception {
         try (RandomAccessFile file = new RandomAccessFile(source, "r")) {
             if (file.length() < 20 || word(file) != 0x46546c67 || word(file) != 2
                     || word(file) != file.length()) throw new IOException("Invalid glTF 2 GLB header");
@@ -53,26 +80,7 @@ final class OriginalGlb {
                     throw new IOException("GLB buffer view " + i + " exceeds embedded data");
                 }
             }
-            JSONArray meshes = document.optJSONArray("meshes");
-            if (meshes == null || meshes.length() == 0) throw new IOException("GLB contains no meshes");
-            int primitives = 0;
-            int morphSlots = 0;
-            for (int i = 0; i < meshes.length(); i++) {
-                JSONArray parts = meshes.getJSONObject(i).getJSONArray("primitives");
-                primitives += parts.length();
-                for (int p = 0; p < parts.length(); p++) {
-                    morphSlots += length(parts.getJSONObject(p).optJSONArray("targets"));
-                }
-            }
-            if (primitives == 0) throw new IOException("GLB contains no mesh primitives");
-            return new JSONObject().put("container", "GLB 2.0").put("embedded_buffer_bytes", bufferBytes)
-                    .put("meshes", meshes.length()).put("primitives", primitives)
-                    .put("skins", length(document.optJSONArray("skins")))
-                    .put("morph_slots_by_primitive", morphSlots)
-                    .put("materials", length(document.optJSONArray("materials")))
-                    .put("animations", length(document.optJSONArray("animations")))
-                    .put("extensions_used", document.optJSONArray("extensionsUsed"))
-                    .put("validation", "container_and_embedded_buffer_ranges");
+            return document;
         }
     }
 
