@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 /** Portable package: source role paths refer to the immutable bytes inside the ZIP. */
 final class ProjectPackage {
@@ -57,11 +58,38 @@ final class ProjectPackage {
                 }
                 add(zip,"motion.foundry.txt",script);
             }
+            if(receipt.has("mesh_parts"))writeParts(zip,store.root,directory,editable,receipt);
             Set<String> written = new HashSet<>();
             for (File file : originals.values()) {
                 if (written.add(file.getName())) add(zip, "sources/" + file.getName(), file);
             }
         }
+    }
+
+    private static void writeParts(ZipOutputStream zip,File root,File directory,File editable,JSONObject receipt) throws Exception {
+        Mesh mesh=Mesh.load(editable);
+        byte[] texture=receipt.has("texture_sha256")?Files.readAllBytes(new File(directory,"base-color.png").toPath()):null;
+        SkeletalMotion motion=receipt.has("motion")?SkeletalMotion.parse(mesh,Files.readString(new File(directory,"motion.foundry.txt").toPath())):null;
+        JSONArray entries=new JSONArray();
+        File temporary=File.createTempFile("part-export-",".glb",new File(root,"cache"));
+        try{
+            var parts=mesh.parts();
+            for(int i=0;i<parts.size();i++){
+                Mesh.Part part=parts.get(i);
+                String path="parts/part-"+(i+1)+".glb";
+                Glb.write(mesh.extractPart(i),temporary,texture,motion);
+                entries.put(new JSONObject().put("name",part.name()).put("role",part.role())
+                        .put("file",path).put("sha256",FilesUtil.hash(temporary)));
+                add(zip,path,temporary);
+            }
+        }finally{
+            Files.deleteIfExists(temporary.toPath());
+            Files.deleteIfExists(new File(temporary+".tmp").toPath());
+        }
+        zip.putNextEntry(new ZipEntry("parts.json"));
+        zip.write(new JSONObject().put("schema","asterion.foundry.parts.v1").put("parts",entries)
+                .put("shared_skin",!mesh.bones.isEmpty()).put("native_acceptance",false).toString(2).getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
     }
 
     private static void add(ZipOutputStream zip, String name, File source) throws IOException {

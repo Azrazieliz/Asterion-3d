@@ -5,9 +5,34 @@ import java.util.*;
 public final class Mesh {
  public final ArrayList<float[]> vertices=new ArrayList<>();
  public final ArrayList<Bone> bones=new ArrayList<>();
+ private final ArrayList<Part> parts=new ArrayList<>();
  public static final int STRIDE=13, LIMIT=1500000;
  private static final int WEIGHTED_STRIDE=20, LEGACY_MAGIC=0x41463344, WEIGHTED_MAGIC=0x41463345;
  static final int INFLUENCES=4;
+ private static final int PART_MAGIC=0x41463346;
+ private static final Set<String> PART_ROLES=Set.of("body","garment","armor","accessory","wing_membrane","surface");
+ record Part(String name,String role,int firstVertex) {}
+ void beginPart(String name,String role){
+  if(name==null||name.isBlank()||name.length()>80||name.chars().anyMatch(Character::isISOControl)
+          ||!PART_ROLES.contains(role)||parts.size()>=64||parts.stream().anyMatch(p->p.name().equals(name))){
+   throw new IllegalArgumentException("Invalid or duplicate mesh part");
+  }
+  int start=vertices.size();
+  if(start%3!=0||parts.isEmpty()&&start!=0||!parts.isEmpty()&&parts.get(parts.size()-1).firstVertex()==start){
+   throw new IllegalStateException("Mesh parts must begin before their triangles");
+  }
+  parts.add(new Part(name,role,start));
+ }
+ List<Part> parts(){return parts.isEmpty()?List.of(new Part("Asset","surface",0)):List.copyOf(parts);}
+ void copyPartsTo(Mesh destination){destination.parts.addAll(parts);}
+ int partEnd(int index){return index+1<parts.size()?parts.get(index+1).firstVertex():vertices.size();}
+ Mesh extractPart(int index){
+  Part part=parts().get(index);Mesh result=new Mesh();
+  result.beginPart(part.name(),part.role());
+  result.bones.addAll(bones);
+  result.vertices.addAll(vertices.subList(part.firstVertex(),partEnd(index)));
+  return result;
+ }
  public static final class Bone { public String name; public int parent; public float x,y,z; public Bone(String n,int p,float a,float b,float c){name=n;parent=p;x=a;y=b;z=c;} }
  public void tri(float[] a,float[] b,float[] c,float[] color,int joint){
   if(vertices.size()+3>LIMIT)throw new IllegalArgumentException("Mesh exceeds current memory budget");
@@ -39,10 +64,15 @@ public final class Mesh {
   bound[12]=first;bound[13]=1-secondWeight;bound[14]=second;bound[15]=secondWeight;
   return bound;
  }
+ static void offsetJoints(float[] vertex,int offset){
+  for(int slot=0;slot<INFLUENCES;slot++)if(weight(vertex,slot)>0)vertex[12+2*slot]+=offset;
+ }
  boolean blended(){for(float[] v:vertices)if(v.length==WEIGHTED_STRIDE)return true;return false;}
- public float[] bounds(){float[] b={Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY};for(float[] v:vertices)for(int k=0;k<3;k++){b[k]=Math.min(b[k],v[k]);b[k+3]=Math.max(b[k+3],v[k]);}return b;}
+ public float[] bounds(){return bounds(0,vertices.size());}
+ float[] bounds(int first,int end){float[] b={Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY};for(int i=first;i<end;i++){float[] v=vertices.get(i);for(int k=0;k<3;k++){b[k]=Math.min(b[k],v[k]);b[k+3]=Math.max(b[k+3],v[k]);}}return b;}
  public String validate(){
   if(vertices.isEmpty()||vertices.size()%3!=0)throw new IllegalStateException("Empty or incomplete mesh");
+  if(!parts.isEmpty()&&parts.get(parts.size()-1).firstVertex()>=vertices.size())throw new IllegalStateException("Empty mesh part");
   for(int i=0;i<bones.size();i++){Bone b=bones.get(i);if(b.parent>=i||b.parent< -1)throw new IllegalStateException("Invalid bone hierarchy");}
   boolean blended=false;
   for(float[] v:vertices){
@@ -65,12 +95,18 @@ public final class Mesh {
  public void save(File f)throws IOException{
   boolean weighted=blended();File tmp=new File(f+".tmp");
   try(FileOutputStream file=new FileOutputStream(tmp);DataOutputStream o=new DataOutputStream(new BufferedOutputStream(file))){
-   o.writeInt(weighted?WEIGHTED_MAGIC:LEGACY_MAGIC);o.writeInt(bones.size());
+   o.writeInt(parts.isEmpty()?(weighted?WEIGHTED_MAGIC:LEGACY_MAGIC):PART_MAGIC);
+   if(!parts.isEmpty())o.writeBoolean(weighted);
+   o.writeInt(bones.size());
    for(Bone b:bones){o.writeUTF(b.name);o.writeInt(b.parent);o.writeFloat(b.x);o.writeFloat(b.y);o.writeFloat(b.z);}
    o.writeInt(vertices.size());
    for(float[] v:vertices){
     for(float n:v)o.writeFloat(n);
     if(weighted&&v.length==STRIDE){o.writeFloat(1);for(int i=0;i<6;i++)o.writeFloat(0);}
+   }
+   if(!parts.isEmpty()){
+    o.writeInt(parts.size());
+    for(Part part:parts){o.writeUTF(part.name());o.writeUTF(part.role());o.writeInt(part.firstVertex());}
    }
    o.flush();file.getFD().sync();
   }
@@ -79,11 +115,21 @@ public final class Mesh {
  public static Mesh load(File f)throws IOException{
   Mesh m=new Mesh();
   try(DataInputStream in=new DataInputStream(new BufferedInputStream(new FileInputStream(f)))){
-   int magic=in.readInt();int stride=switch(magic){case LEGACY_MAGIC->STRIDE;case WEIGHTED_MAGIC->WEIGHTED_STRIDE;default->throw new IOException("Not a Foundry mesh");};
+   int magic=in.readInt();int stride=switch(magic){case LEGACY_MAGIC->STRIDE;case WEIGHTED_MAGIC->WEIGHTED_STRIDE;case PART_MAGIC->in.readBoolean()?WEIGHTED_STRIDE:STRIDE;default->throw new IOException("Not a Foundry mesh");};
    int n=in.readInt();if(n<0||n>512)throw new IOException("Invalid bone count");
    for(int i=0;i<n;i++)m.bone(in.readUTF(),in.readInt(),in.readFloat(),in.readFloat(),in.readFloat());
    n=in.readInt();if(n<0||n>LIMIT||n*(long)stride*4>f.length())throw new IOException("Invalid vertex count");
    for(int i=0;i<n;i++){float[] v=new float[stride];for(int j=0;j<stride;j++)v[j]=in.readFloat();m.vertices.add(v);}
+   if(magic==PART_MAGIC){
+    int count=in.readInt();if(count<1||count>64)throw new IOException("Invalid mesh part count");
+    Set<String> names=new HashSet<>();int previous=-1;
+    for(int i=0;i<count;i++){
+     String name=in.readUTF(),role=in.readUTF();int start=in.readInt();
+     if(name.isBlank()||name.length()>80||name.chars().anyMatch(Character::isISOControl)||!names.add(name)
+             ||!PART_ROLES.contains(role)||i==0&&start!=0||start<=previous||start>=n||start%3!=0)throw new IOException("Invalid mesh part");
+     m.parts.add(new Part(name,role,start));previous=start;
+    }
+   }
    if(in.read()!=-1)throw new IOException("Unexpected mesh data after vertices");
   }
   m.validate();return m;

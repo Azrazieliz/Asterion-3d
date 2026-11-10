@@ -7,7 +7,7 @@ public final class MainActivity extends Activity {
  static final String HUMAN_REFERENCE = "Character reference candidate";
  String bindingReference, handoffProfile;
  Button motionPlaybackButton;
- final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Quadruped template","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
+ final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Humanoid with separate tunic","Quadruped template","Articulated dragon","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
  public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}if(!ProductionService.active)store.recover();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show("Create");if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
@@ -179,7 +179,9 @@ public final class MainActivity extends Activity {
   studioRecipe(HUMAN_REFERENCE);
   studioRecipe(ProductionService.HULL);
   studioRecipe("Humanoid template");
+  studioRecipe("Humanoid with separate tunic");
   studioRecipe("Quadruped template");
+  studioRecipe("Articulated dragon");
   label("Objects and environments");
   for (String recipe : new String[]{ProductionService.DEPTH, ProductionService.ORIGINAL_GLB, "OBJ geometry", "Sword", "Pavilion", "Tree", "Terrain"}) {
    studioRecipe(recipe);
@@ -267,8 +269,20 @@ public final class MainActivity extends Activity {
    button("Right", () -> preview.view(-90,0));
    button("Back", () -> preview.view(180,0));
    button("Top", () -> preview.view(0,85));
+   if(mesh.parts().size()>1)button("Show or hide mesh parts",()->chooseVisibleParts(mesh));
    if (motion != null) {
     label(motion.name() + " · " + motion.durationSeconds() + " seconds");
+    MeshView animated=preview;
+    SeekBar timeline=new SeekBar(this);
+    timeline.setMax(Math.max(1,Math.round(motion.durationSeconds()*1000)));
+    timeline.setContentDescription("Animation position");
+    timeline.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+     public void onProgressChanged(SeekBar bar,int millis,boolean fromUser){if(fromUser)animated.seekMotion(millis);}
+     public void onStartTrackingTouch(SeekBar bar){}
+     public void onStopTrackingTouch(SeekBar bar){}
+    });
+    animated.onMotionProgress(timeline::setProgress);
+    body.addView(timeline);
     motionPlaybackButton = button("Play animation", () -> motionPlaybackButton.setText(
             preview.toggleMotion() ? "Pause animation" : "Play animation"));
    }
@@ -284,6 +298,13 @@ public final class MainActivity extends Activity {
       button("Prefer these settings on the original base", () -> preferForm(request));
      }
      button("Create animation", () -> motionDialog(id,baseSha,null));
+     if (ProductionService.ASSEMBLY.equals(request.getString("kind"))) {
+      int rootB=receipt.getJSONObject("reference_metrics").getInt("actor_b_root");
+      button("Create coordinated animation",()->motionDialog(id,baseSha,
+        "clip Coordinated scene\nactor A @0\nactor B @"+rootB+"\nstage A 0 3 idle\nstage B 2 5 idle\n"));
+     } else if(mesh.bones.stream().filter(joint->joint.parent<0).count()==1) {
+      button("Assemble with another actor",()->choosePartner(id,baseSha));
+     }
      if (!mesh.blended() && motion == null) button("Blend skin weights", () -> {
       try {
        enqueue(new JSONObject().put("kind",ProductionService.SKIN_BLEND).put("parent",id)
@@ -309,6 +330,20 @@ public final class MainActivity extends Activity {
    if (receiptFile.isFile()) label(java.nio.file.Files.readString(receiptFile.toPath()));
    button("Back to projects", () -> show("Projects"));
   } catch (Exception failure) { error(failure); }
+ }
+
+ private void chooseVisibleParts(Mesh mesh) {
+  List<Mesh.Part> parts=mesh.parts();
+  String[] names=new String[parts.size()];
+  boolean[] checked=new boolean[parts.size()];
+  for(int i=0;i<parts.size();i++){
+   names[i]=parts.get(i).name();
+   checked[i]=preview.partVisible(i);
+  }
+  MeshView current=preview;
+  new AlertDialog.Builder(this).setTitle("Mesh parts")
+    .setMultiChoiceItems(names,checked,(dialog,part,visible)->current.setPartVisible(part,visible))
+    .setPositiveButton("Done",null).show();
  }
 
  private void export(String id) {
@@ -417,11 +452,11 @@ public final class MainActivity extends Activity {
    input.setMaxLines(12);
   } else {
    input.setSingleLine(true);
-   input.setHint("Idle, walk in place, or tail wag");
+   input.setHint("Idle, walk in place, tail wag, dragon flight or perch");
   }
   AlertDialog dialog = new AlertDialog.Builder(this).setTitle(tracks ? "Edit animation tracks" : "Create animation")
           .setMessage(tracks ? "Edit local joint keyframes and optional contact checks."
-                  : "Use a supported movement for this rig. Walk is an in-place cycle on the Foundry humanoid rig.")
+                  : "Choose a movement that fits the rig. Flight, landing and perch require the articulated dragon rig.")
           .setView(input).setNegativeButton("Cancel",null).setPositiveButton("Create clip",null).create();
   dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
    try {
@@ -435,6 +470,34 @@ public final class MainActivity extends Activity {
    } catch (Exception failure) { error(failure); }
   }));
   dialog.show();
+ }
+
+ private void choosePartner(String id,String baseSha){
+  try{
+   List<String> ids=new ArrayList<>(),hashes=new ArrayList<>(),names=new ArrayList<>();
+   for(JSONObject job:store.jobs()){
+    String candidate=job.getString("id");
+    if(candidate.equals(id)||!job.getString("state").equals("complete"))continue;
+    JSONObject request=new JSONObject(job.getString("request"));
+    if(ProductionService.ASSEMBLY.equals(request.getString("kind")))continue;
+    File receiptFile=new File(store.project(candidate),"receipt.json");
+    if(!receiptFile.isFile())continue;
+    JSONObject proof=new JSONObject(java.nio.file.Files.readString(receiptFile.toPath()));
+    if(proof.optInt("bones")<1||proof.optInt("rig_roots",1)!=1||proof.has("texture_sha256"))continue;
+    String checksum=proof.optString("editable_mesh_sha256");
+    if(checksum.isEmpty())continue;
+    ids.add(candidate);hashes.add(checksum);
+    names.add(request.optString("description").isBlank()?request.getString("kind"):request.getString("description"));
+   }
+   if(ids.isEmpty())throw new IOException("Create another editable rig before assembling actors");
+   new AlertDialog.Builder(this).setTitle("Choose the second actor").setItems(names.toArray(new String[0]),(dialog,item)->{
+    try{
+     enqueue(new JSONObject().put("kind",ProductionService.ASSEMBLY).put("parent",id)
+       .put("parent_mesh_sha256",baseSha).put("partner",ids.get(item)).put("partner_mesh_sha256",hashes.get(item))
+       .put("description","Two-actor scene with "+names.get(item)).put("scale",1).put("detail",12));
+    }catch(Exception failure){error(failure);}
+   }).show();
+  }catch(Exception failure){error(failure);}
  }
 
  private void formEditor(String scope, FormLibrary.Profile existing) {

@@ -18,19 +18,34 @@ public final class Recipes {
    case "Terrain":{
     int n=detail*4;for(int x=0;x<n;x++)for(int z=0;z<n;z++){float[] a=ground(x,z,n),b=ground(x+1,z,n),c=ground(x+1,z+1,n),d=ground(x,z+1,n);m.quad(a,d,c,b,GREEN,0);}break;
    }
-   case "Humanoid template":{
+   case "Humanoid template", "Humanoid with separate tunic":{
+    boolean clothed=kind.equals("Humanoid with separate tunic");
+    if(clothed)m.beginPart("Body","body");
     int root=m.bone("root",-1,0,0,0),hips=m.bone("hips",root,0,.95f,0),chest=m.bone("chest",hips,0,1.25f,0),head=m.bone("head",chest,0,1.65f,0);
     m.ellipsoid(0,1.2f,0,.22f,.30f,.13f,SKIN,chest,detail);m.ellipsoid(0,1.66f,0,.13f,.17f,.12f,SKIN,head,detail);
-    for(int side:new int[]{-1,1}){String s=side<0?"L":"R";int leg=m.bone("upper_leg_"+s,hips,side*.12f,.9f,0),shin=m.bone("lower_leg_"+s,leg,side*.12f,.5f,0),arm=m.bone("upper_arm_"+s,chest,side*.27f,1.4f,0),fore=m.bone("forearm_"+s,arm,side*.53f,1.4f,0);m.ellipsoid(side*.12f,.73f,0,.085f,.25f,.085f,SKIN,leg,detail);m.ellipsoid(side*.12f,.28f,0,.065f,.23f,.07f,SKIN,shin,detail);m.ellipsoid(side*.39f,1.4f,0,.18f,.065f,.065f,SKIN,arm,detail);m.ellipsoid(side*.67f,1.4f,0,.16f,.055f,.055f,SKIN,fore,detail);}break;
+    for(int side:new int[]{-1,1}){String s=side<0?"L":"R";int leg=m.bone("upper_leg_"+s,hips,side*.12f,.9f,0),shin=m.bone("lower_leg_"+s,leg,side*.12f,.5f,0),arm=m.bone("upper_arm_"+s,chest,side*.27f,1.4f,0),fore=m.bone("forearm_"+s,arm,side*.53f,1.4f,0);m.ellipsoid(side*.12f,.73f,0,.085f,.25f,.085f,SKIN,leg,detail);m.ellipsoid(side*.12f,.28f,0,.065f,.23f,.07f,SKIN,shin,detail);m.ellipsoid(side*.39f,1.4f,0,.18f,.065f,.065f,SKIN,arm,detail);m.ellipsoid(side*.67f,1.4f,0,.16f,.055f,.055f,SKIN,fore,detail);}
+    if(clothed)tunic(m,chest,hips,detail);break;
    }
    case "Quadruped template":{
     int root=m.bone("root",-1,0,0,0),spine=m.bone("spine",root,0,.7f,0),neck=m.bone("neck",spine,0,.8f,.55f),head=m.bone("head",neck,0,.95f,.8f),tail=m.bone("tail",spine,0,.7f,-.65f);
     m.ellipsoid(0,.7f,0,.25f,.3f,.65f,WOOD,spine,detail);m.ellipsoid(0,.95f,.8f,.18f,.2f,.28f,WOOD,head,detail);m.ellipsoid(0,.65f,-.9f,.07f,.08f,.35f,WOOD,tail,detail);
     for(int x:new int[]{-1,1})for(int z:new int[]{-1,1}){int hip=m.bone("leg_"+x+"_"+z,spine,x*.2f,.6f,z*.42f),foot=m.bone("foot_"+x+"_"+z,hip,x*.2f,.28f,z*.42f);m.ellipsoid(x*.2f,.48f,z*.42f,.085f,.22f,.09f,WOOD,hip,detail);m.ellipsoid(x*.2f,.15f,z*.42f,.06f,.16f,.07f,WOOD,foot,detail);}break;
    }
+   case "Articulated dragon":m=DragonRig.create(detail);break;
    default:throw new IllegalArgumentException("No validated production recipe for "+kind);
   }
   for(float[] v:m.vertices)for(int i=0;i<3;i++)v[i]*=scale;for(Mesh.Bone b:m.bones){b.x*=scale;b.y*=scale;b.z*=scale;}m.validate();return m;
+ }
+ private static void tunic(Mesh mesh,int chest,int hips,int detail){
+  mesh.beginPart("Tunic","garment");
+  float[][] rings={{.80f,.245f,.173f},{.95f,.205f,.145f},{1.12f,.230f,.149f},{1.32f,.229f,.143f},{1.47f,.152f,.112f}};
+  float[] cloth={.08f,.24f,.29f},trim={.29f,.49f,.49f};
+  int sides=2*detail;
+  float[][] draped=ClothDrape.relax(rings,sides);
+  for(int ring=0;ring<rings.length-1;ring++)for(int side=0;side<sides;side++){
+   int a=ring*sides+side,b=ring*sides+(side+1)%sides;
+   mesh.quad(draped[a],draped[a+sides],draped[b+sides],draped[b],ring==0?trim:cloth,ring<2?hips:chest);
+  }
  }
  static float[] ground(int x,int z,int n){float a=(float)x/n*10-5,b=(float)z/n*10-5;return new float[]{a,(float)(.45*Math.sin(a*.8)*Math.cos(b*.6)),b};}
  /** Opaque foreground on transparent or near-uniform corner background. Pixel-cell closed extrusion, not hidden-surface reconstruction. */

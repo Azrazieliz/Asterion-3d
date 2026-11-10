@@ -59,13 +59,36 @@ for name in sys.argv[1:]:
  for a in g['accessors']:
   v=g['bufferViews'][a['bufferView']];components=COMPONENTS[a['type']];width=4 if a['componentType']==5126 else 2;stride=v.get('byteStride',components*width)
   assert a.get('byteOffset',0)+(a['count']-1)*stride+components*width<=v['byteLength']
- stride=g['bufferViews'][0]['byteStride'];n=g['accessors'][0]['count'];positions=[]
- for i in range(n):
-  v=struct.unpack_from('<12f',binary,i*stride);assert all(map(math.isfinite,v));positions.append(v[:3]);assert abs(sum(x*x for x in v[3:6])-1)<1e-4
-  if 'textures' in g: assert all(0<=axis<=1 for axis in v[6:8])
- for k in range(3):
-  assert abs(min(v[k] for v in positions)-g['accessors'][0]['min'][k])<1e-5
-  assert abs(max(v[k] for v in positions)-g['accessors'][0]['max'][k])<1e-5
+ stride=g['bufferViews'][0]['byteStride']
+ ranges=[]
+ for mesh in g['meshes']:
+  for primitive in mesh['primitives']:
+   attributes=primitive['attributes']
+   pos=g['accessors'][attributes['POSITION']]
+   start=pos.get('byteOffset',0)
+   n=pos['count']
+   assert start%stride==0 and n%3==0 and pos['bufferView']==0
+   for key,offset in {'NORMAL':12,'TEXCOORD_0':24,'COLOR_0':32}.items():
+    accessor=g['accessors'][attributes[key]]
+    assert accessor['count']==n and accessor['bufferView']==0 and accessor['byteOffset']==start+offset
+   ranges.append((start,n))
+   positions=[]
+   for i in range(n):
+    v=struct.unpack_from('<12f',binary,start+i*stride)
+    assert all(map(math.isfinite,v));positions.append(v[:3]);assert abs(sum(x*x for x in v[3:6])-1)<1e-4
+    if 'textures' in g: assert all(0<=axis<=1 for axis in v[6:8])
+   for k in range(3):
+    assert abs(min(v[k] for v in positions)-pos['min'][k])<1e-5
+    assert abs(max(v[k] for v in positions)-pos['max'][k])<1e-5
+   if 'skins' in g:
+    for key,offset in {'JOINTS_0':48,'WEIGHTS_0':56}.items():
+     accessor=g['accessors'][attributes[key]]
+     assert accessor['count']==n and accessor['bufferView']==0 and accessor['byteOffset']==start+offset
+ end=0
+ for start,n in sorted(ranges):
+  assert start==end,'Mesh parts must have distinct contiguous vertex data'
+  end+=n*stride
+ assert end==g['bufferViews'][0]['byteLength']
  if 'skins' in g:
   joints=g['skins'][0]['joints'];parents={child:i for i,node in enumerate(g['nodes']) for child in node.get('children',[])}
   def root(i):
@@ -82,8 +105,10 @@ for name in sys.argv[1:]:
   off=g['bufferViews'][1]['byteOffset']
   for k,node in enumerate(joints):
    inv=struct.unpack_from('<16f',binary,off+k*64);assert all(abs(x+y)<1e-5 for x,y in zip(world(node),inv[12:15]))
-  for i in range(n):
-   js=struct.unpack_from('<4H',binary,i*stride+48);ws=struct.unpack_from('<4f',binary,i*stride+56);assert max(js)<len(joints) and abs(sum(ws)-1)<1e-6
+  for start,n in ranges:
+   for i in range(n):
+    js=struct.unpack_from('<4H',binary,start+i*stride+48);ws=struct.unpack_from('<4f',binary,start+i*stride+56)
+    assert max(js)<len(joints) and min(ws)>=0 and abs(sum(ws)-1)<1e-6
  animations = check_animation(g, binary)
  print(pathlib.Path(name).name,'binary/accessor/bounds/rest-pose checks PASS'
        + (f'; animation channel/sampler checks PASS ({animations} clip)' if animations else ''))

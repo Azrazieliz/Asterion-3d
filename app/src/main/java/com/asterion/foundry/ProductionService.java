@@ -33,6 +33,7 @@ public final class ProductionService extends Service {
     static final String FORM = "Saved form variant";
     static final String MOTION = "Skeletal animation";
     static final String SKIN_BLEND = "Blend skin weights";
+    static final String ASSEMBLY = "Assemble two actors";
 
     @Override public void onCreate() {
         super.onCreate();
@@ -169,7 +170,11 @@ public final class ProductionService extends Service {
         if (DEPTH.equals(kind)) signature.append("|depth-relief-v1|").append(MidasDepth.SHA256);
         if (HULL.equals(kind)) signature.append('|').append(VisualHull.METHOD);
         if (isRigTemplate(kind)) signature.append('|').append(SkinBlend.VERSION);
-        Base base = REVISION.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind) ? base(request) : null;
+        if ("Humanoid with separate tunic".equals(kind)) signature.append('|').append(ClothDrape.VERSION);
+        if ("Articulated dragon".equals(kind)) signature.append("|dragon_anatomy_v1");
+        Base base = REVISION.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind)
+                || ASSEMBLY.equals(kind) ? base(request) : null;
+        Base partner = ASSEMBLY.equals(kind) ? base(request.getString("partner"),request.getString("partner_mesh_sha256")) : null;
         if (base != null) {
             signature.append("|derived-v2|").append(request.getString("parent_mesh_sha256"))
                     .append('|').append(base.textureSha());
@@ -178,6 +183,9 @@ public final class ProductionService extends Service {
                 case MOTION -> signature.append('|').append(SkeletalMotion.VERSION).append('|')
                         .append(request.optString("motion_script", request.optString("motion_intent")));
                 case SKIN_BLEND -> signature.append('|').append(SkinBlend.VERSION);
+                case ASSEMBLY -> signature.append('|').append(RigAssembly.VERSION).append('|')
+                        .append(request.getString("partner_mesh_sha256")).append('|').append(partner.textureSha())
+                        .append('|').append(request.opt("partner_offset"));
                 default -> signature.append('|').append(request.getJSONArray("axes")).append('|').append(request.opt("color"));
             }
         }
@@ -194,7 +202,7 @@ public final class ProductionService extends Service {
         Candidate candidate = readCandidate(checkpoint, checkpointMetrics, texture, kind);
         if (candidate == null) candidate = readCandidate(cache, cacheMetrics, cacheTexture, kind);
         boolean reused = candidate != null;
-        if (!reused) candidate = generate(request, originals, directory, volumeWorkspace, id, base);
+        if (!reused) candidate = generate(request, originals, directory, volumeWorkspace, id, base, partner);
         if (candidate.texture != null) {
             FilesUtil.write(texture, candidate.texture);
             candidate.metrics.put("texture_sha256", FilesUtil.hash(texture));
@@ -252,6 +260,16 @@ public final class ProductionService extends Service {
                 .put("rig_validation", VOLUME.equals(kind) ? "unrigged" : candidate.mesh.bones.isEmpty()
                         ? "not_applicable" : candidate.mesh.blended() ? "hierarchy_and_normalized_blend_weights"
                         : "hierarchy_and_normalized_rigid_weights_only");
+        if (candidate.mesh.parts().size() > 1) {
+            JSONArray parts = new JSONArray();
+            for (int i = 0; i < candidate.mesh.parts().size(); i++) {
+                Mesh.Part part = candidate.mesh.parts().get(i);
+                parts.put(new JSONObject().put("name",part.name()).put("role",part.role())
+                        .put("triangles",(candidate.mesh.partEnd(i)-part.firstVertex())/3));
+            }
+            receipt.put("mesh_parts",parts).put("shared_skin",!candidate.mesh.bones.isEmpty());
+        }
+        if(!candidate.mesh.bones.isEmpty())receipt.put("rig_roots",candidate.mesh.bones.stream().filter(bone->bone.parent<0).count());
         if (candidate.texture != null) receipt.put("texture_sha256", candidate.metrics.getString("texture_sha256"));
         if (motionEvidence != null) receipt.put("motion",motionEvidence);
         if (VOLUME.equals(kind) && request.optBoolean("human_reference")) {
@@ -392,13 +410,15 @@ public final class ProductionService extends Service {
     }
 
     private Base base(JSONObject request) throws Exception {
-        String parent = request.getString("parent");
+        return base(request.getString("parent"),request.getString("parent_mesh_sha256"));
+    }
+
+    private Base base(String parent,String expected) throws Exception {
         if (!"complete".equals(store.job(parent).getString("state"))) {
             throw new IOException("The base must be a completed editable project");
         }
         File directory = store.project(parent);
         File mesh = new File(directory,"checkpoint.mesh");
-        String expected = request.getString("parent_mesh_sha256");
         JSONObject receipt = new JSONObject(Files.readString(new File(directory,"receipt.json").toPath()));
         if (!expected.equals(receipt.optString("editable_mesh_sha256")) || !expected.equals(FilesUtil.hash(mesh))) {
             throw new IOException("Base geometry checksum does not match");
@@ -430,7 +450,7 @@ public final class ProductionService extends Service {
         }
     }
 
-    private Candidate generate(JSONObject request, Map<String, File> files, File directory, String volumeWorkspace, String id, Base base) throws Exception {
+    private Candidate generate(JSONObject request, Map<String, File> files, File directory, String volumeWorkspace, String id, Base base, Base partner) throws Exception {
         String kind = request.getString("kind");
         float scale = (float) request.getDouble("scale");
         int detail = request.getInt("detail");
@@ -514,6 +534,17 @@ public final class ProductionService extends Service {
         if (SKIN_BLEND.equals(kind)) {
             return blendSkin(Mesh.load(base.mesh()),base.textureBytes());
         }
+        if (ASSEMBLY.equals(kind)) {
+            if (base.texture()!=null||partner.texture()!=null) throw new IOException("Two-actor assembly currently supports vertex-coloured rigs");
+            Mesh first=Mesh.load(base.mesh()),second=Mesh.load(partner.mesh());
+            JSONArray supplied=request.optJSONArray("partner_offset");
+            float x=supplied==null?RigAssembly.defaultPartnerX(first,second):(float)supplied.getDouble(0);
+            float y=supplied==null?0:(float)supplied.getDouble(1),z=supplied==null?0:(float)supplied.getDouble(2);
+            Mesh combined=RigAssembly.merge(first,second,x,y,z,this::check);
+            return new Candidate(combined,new JSONObject().put("actor_a_root",0).put("actor_b_root",first.bones.size())
+                    .put("partner_offset_metres",new JSONArray().put(x).put(y).put(z))
+                    .put("partner_mesh_sha256",request.getString("partner_mesh_sha256")));
+        }
         if ("Image silhouette".equals(kind)) {
             SourceFiles.Raster image = SourceFiles.decode(files.get("source"), 96);
             return new Candidate(Recipes.silhouette(image.pixels(), image.width(), image.height(),
@@ -525,7 +556,13 @@ public final class ProductionService extends Service {
             return new Candidate(Glb.readObj(source), new JSONObject());
         }
         Mesh recipe = Recipes.create(kind, scale, detail);
-        return isRigTemplate(kind) ? blendSkin(recipe,null) : new Candidate(recipe, new JSONObject());
+        if ("Articulated dragon".equals(kind)) return new Candidate(recipe,new JSONObject()
+                .put("anatomy","articulated_dragon_with_wing_digits").put("appearance_source","procedural_basis"));
+        if (!isRigTemplate(kind)) return new Candidate(recipe,new JSONObject());
+        Candidate bound=blendSkin(recipe,null);
+        if ("Humanoid with separate tunic".equals(kind)) bound.metrics.put("garment_fit",ClothDrape.VERSION)
+                .put("animated_cloth_simulation",false);
+        return bound;
     }
 
     private Candidate blendSkin(Mesh mesh, byte[] texture) throws Exception {
@@ -536,7 +573,8 @@ public final class ProductionService extends Service {
     }
 
     private static boolean isRigTemplate(String kind) {
-        return "Humanoid template".equals(kind) || "Quadruped template".equals(kind);
+        return "Humanoid template".equals(kind) || "Humanoid with separate tunic".equals(kind)
+                || "Quadruped template".equals(kind);
     }
 
     static FormLibrary.Profile formFrom(JSONObject snapshot) throws Exception {
@@ -602,6 +640,8 @@ public final class ProductionService extends Service {
             case FORM -> "saved_form_rule_v1";
             case MOTION -> SkeletalMotion.VERSION;
             case SKIN_BLEND -> SkinBlend.VERSION;
+            case ASSEMBLY -> RigAssembly.VERSION;
+            case "Articulated dragon" -> "procedural_dragon_anatomy_v1";
             case "Image silhouette" -> "deterministic_2_5d_extrusion";
             case "OBJ geometry" -> "triangulated_OBJ_geometry_only";
             default -> "parametric_recipe";

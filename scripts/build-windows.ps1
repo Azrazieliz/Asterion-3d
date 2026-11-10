@@ -17,12 +17,12 @@ New-Item -ItemType Directory -Force -Path "$build\classes","$build\dex","$build\
 $sourceFiles=@(Get-ChildItem "$src\java" -Recurse -File -Filter '*.java' | ForEach-Object {$_.FullName})
 & "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -cp $classPath -d "$build\classes" @sourceFiles
 if($LASTEXITCODE -ne 0){throw 'Java compilation failed'}
-$core=@('FilesUtil','Mesh','Recipes','Glb','VisualHull','GeometryAudit','DepthRelief','MeshRevision','FormLibrary','SkeletalMotion','ReferenceView','PoseEvidence','SkinBlend') | ForEach-Object {"$src\java\com\asterion\foundry\$_.java"}
-$fixtures=@('CoreAcceptance','FormAcceptance','MotionAcceptance','ReferenceViewAcceptance','PoseEvidenceAcceptance','SkinBlendAcceptance') | ForEach-Object {"$root\tests\$_.java"}
+$core=@('FilesUtil','Mesh','Recipes','Glb','VisualHull','GeometryAudit','DepthRelief','MeshRevision','FormLibrary','SkeletalMotion','ReferenceView','PoseEvidence','SkinBlend','ClothDrape','RigAssembly','DragonRig') | ForEach-Object {"$src\java\com\asterion\foundry\$_.java"}
+$fixtures=@('CoreAcceptance','FormAcceptance','MotionAcceptance','ReferenceViewAcceptance','PoseEvidenceAcceptance','SkinBlendAcceptance','ScenePartsAcceptance','DragonRigAcceptance','ChoreographyAcceptance') | ForEach-Object {"$root\tests\$_.java"}
 & "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -d "$build\host" @core @fixtures
 if($LASTEXITCODE -ne 0){throw 'Host test compilation failed'}
 Push-Location $root
-foreach($fixture in @('CoreAcceptance','com.asterion.foundry.FormAcceptance','MotionAcceptance','com.asterion.foundry.ReferenceViewAcceptance','com.asterion.foundry.PoseEvidenceAcceptance','com.asterion.foundry.SkinBlendAcceptance')) {
+foreach($fixture in @('CoreAcceptance','com.asterion.foundry.FormAcceptance','MotionAcceptance','com.asterion.foundry.ReferenceViewAcceptance','com.asterion.foundry.PoseEvidenceAcceptance','com.asterion.foundry.SkinBlendAcceptance','com.asterion.foundry.ScenePartsAcceptance','com.asterion.foundry.DragonRigAcceptance','com.asterion.foundry.ChoreographyAcceptance')) {
     & "$Java\bin\java.exe" -cp "$build\host" $fixture
     if($LASTEXITCODE -ne 0){throw "Acceptance failed: $fixture"}
 }

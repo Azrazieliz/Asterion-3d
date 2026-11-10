@@ -12,6 +12,7 @@ public final class MeshRevision {
         }
         source.validate();
         Mesh result = new Mesh();
+        source.copyPartsTo(result);
         for (Mesh.Bone bone : source.bones) {
             result.bone(bone.name, bone.parent, bone.x * sx, bone.y * sy, bone.z * sz);
         }

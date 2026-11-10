@@ -33,12 +33,34 @@ public final class Glb {
   ArrayList<Integer> roots=new ArrayList<>();
   if(skin)for(int i=0;i<m.bones.size();i++)if(m.bones.get(i).parent==-1)roots.add(i+1);
   int sharedRoot=roots.size()>1?m.bones.size()+1:-1;
-  float[] b=m.bounds();StringBuilder j=new StringBuilder("{\"asset\":{\"version\":\"2.0\",\"generator\":\"Asterion Foundry 0.1\"},\"scene\":0,\"scenes\":[{\"nodes\":[0");
+  List<Mesh.Part> parts=m.parts();
+  int lastRigNode=sharedRoot>=0?sharedRoot:m.bones.size();
+  int attributes=skin?6:4, inverseBind=attributes*parts.size();
+  StringBuilder j=new StringBuilder("{\"asset\":{\"version\":\"2.0\",\"generator\":\"Asterion Foundry 0.1\"},\"scene\":0,\"scenes\":[{\"nodes\":[0");
   if(sharedRoot>=0)j.append(',').append(sharedRoot);else for(int root:roots)j.append(',').append(root);
-  j.append("]}],\"nodes\":[{\"name\":\"Asset\",\"mesh\":0").append(skin?",\"skin\":0":"").append("}");
+  for(int i=1;i<parts.size();i++)j.append(',').append(lastRigNode+i);
+  j.append("]}],\"nodes\":[");partNode(j,parts.get(0),0,skin);
   if(skin)for(int i=0;i<m.bones.size();i++){Mesh.Bone v=m.bones.get(i),p=v.parent<0?new Mesh.Bone("",-1,0,0,0):m.bones.get(v.parent);j.append(",{\"name\":").append(FilesUtil.quote(v.name)).append(",\"translation\":[").append(v.x-p.x).append(',').append(v.y-p.y).append(',').append(v.z-p.z).append(']');ArrayList<Integer> ch=new ArrayList<>();for(int k=0;k<m.bones.size();k++)if(m.bones.get(k).parent==i)ch.add(k+1);if(!ch.isEmpty())j.append(",\"children\":").append(ch);j.append('}');}
   if(sharedRoot>=0)j.append(",{\"name\":\"Rig assembly\",\"children\":").append(roots).append('}');
-  j.append("],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2,\"COLOR_0\":3").append(skin?",\"JOINTS_0\":4,\"WEIGHTS_0\":5":"").append("},\"material\":0,\"mode\":4}]}],\"materials\":[{\"name\":\"Vertex palette\",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,1,1,1]").append(png==null?"":",\"baseColorTexture\":{\"index\":0}").append(",\"metallicFactor\":0,\"roughnessFactor\":0.8},\"alphaMode\":\"OPAQUE\"}]").append(textures).append(",\"buffers\":[{\"byteLength\":").append(bin.capacity()).append("}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":").append(meshBytes).append(",\"byteStride\":").append(stride).append(",\"target\":34962}");
+  for(int i=1;i<parts.size();i++){j.append(',');partNode(j,parts.get(i),i,skin);}
+  j.append("],\"meshes\":[");
+  for(int i=0;i<parts.size();i++){
+   if(i>0)j.append(',');int a=i*attributes;
+   j.append("{\"name\":").append(FilesUtil.quote(parts.get(i).name())).append(",\"primitives\":[{\"attributes\":{\"POSITION\":").append(a)
+    .append(",\"NORMAL\":").append(a+1).append(",\"TEXCOORD_0\":").append(a+2).append(",\"COLOR_0\":").append(a+3);
+   if(skin)j.append(",\"JOINTS_0\":").append(a+4).append(",\"WEIGHTS_0\":").append(a+5);
+   j.append("},\"material\":").append(i).append(",\"mode\":4}]}");
+  }
+  j.append("],\"materials\":[");
+  for(int i=0;i<parts.size();i++){
+   if(i>0)j.append(',');Mesh.Part part=parts.get(i);
+   boolean armor=part.role().equals("armor"), sheets=part.role().equals("wing_membrane")||part.role().equals("garment");
+   j.append("{\"name\":").append(FilesUtil.quote(part.role().equals("surface")?"Vertex palette":part.name()))
+    .append(",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,1,1,1]").append(png==null?"":",\"baseColorTexture\":{\"index\":0}")
+    .append(",\"metallicFactor\":").append(armor?"0.75":"0").append(",\"roughnessFactor\":").append(armor?"0.35":"0.8")
+    .append("},\"alphaMode\":\"OPAQUE\"").append(sheets?",\"doubleSided\":true":"").append('}');
+  }
+  j.append(']').append(textures).append(",\"buffers\":[{\"byteLength\":").append(bin.capacity()).append("}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":").append(meshBytes).append(",\"byteStride\":").append(stride).append(",\"target\":34962}");
   if(skin)j.append(",{\"buffer\":0,\"byteOffset\":").append(meshBytes).append(",\"byteLength\":").append(boneBytes).append('}');
   if(png!=null)j.append(",{\"buffer\":0,\"byteOffset\":").append(meshBytes+boneBytes).append(",\"byteLength\":").append(png.length).append('}');
   int offset=motionOffset;
@@ -47,8 +69,15 @@ public final class Glb {
    bufferView(j,offset,times);offset+=times;
    bufferView(j,offset,values);offset+=values;
   }
-  j.append("],\"accessors\":[");access(j,0,0,5126,n,"VEC3");j.setLength(j.length()-1);j.append(",\"min\":[").append(b[0]).append(',').append(b[1]).append(',').append(b[2]).append("],\"max\":[").append(b[3]).append(',').append(b[4]).append(',').append(b[5]).append("]},");access(j,0,12,5126,n,"VEC3");j.append(',');access(j,0,24,5126,n,"VEC2");j.append(',');access(j,0,32,5126,n,"VEC4");
-  if(skin){j.append(',');access(j,0,48,5123,n,"VEC4");j.append(',');access(j,0,56,5126,n,"VEC4");j.append(',');access(j,1,0,5126,m.bones.size(),"MAT4");}
+  j.append("],\"accessors\":[");
+  for(int i=0;i<parts.size();i++){
+   if(i>0)j.append(',');int start=parts.get(i).firstVertex(),end=m.partEnd(i),count=end-start,off=start*stride;
+   float[] b=m.bounds(start,end);
+   access(j,0,off,5126,count,"VEC3");j.setLength(j.length()-1);j.append(",\"min\":[").append(b[0]).append(',').append(b[1]).append(',').append(b[2]).append("],\"max\":[").append(b[3]).append(',').append(b[4]).append(',').append(b[5]).append("]},");
+   access(j,0,off+12,5126,count,"VEC3");j.append(',');access(j,0,off+24,5126,count,"VEC2");j.append(',');access(j,0,off+32,5126,count,"VEC4");
+   if(skin){j.append(',');access(j,0,off+48,5123,count,"VEC4");j.append(',');access(j,0,off+56,5126,count,"VEC4");}
+  }
+  if(skin){j.append(',');access(j,1,0,5126,m.bones.size(),"MAT4");}
   int view=png==null?2:3;
   for(SkeletalMotion.Track track:tracks){
    float[] times=track.times();
@@ -57,12 +86,12 @@ public final class Glb {
    j.append(",\"min\":[").append(times[0]).append("],\"max\":[").append(times[times.length-1]).append("]},");
    access(j,view++,0,5126,times.length,track.rotation()?"VEC4":"VEC3");
   }
-  j.append(']');if(skin){j.append(",\"skins\":[{\"inverseBindMatrices\":6");if(sharedRoot>=0)j.append(",\"skeleton\":").append(sharedRoot);j.append(",\"joints\":[");for(int i=0;i<m.bones.size();i++){if(i>0)j.append(',');j.append(i+1);}j.append("]}]");}
+  j.append(']');if(skin){j.append(",\"skins\":[{\"inverseBindMatrices\":").append(inverseBind);if(sharedRoot>=0)j.append(",\"skeleton\":").append(sharedRoot);j.append(",\"joints\":[");for(int i=0;i<m.bones.size();i++){if(i>0)j.append(',');j.append(i+1);}j.append("]}]");}
   if(motion!=null){
    j.append(",\"animations\":[{\"name\":").append(FilesUtil.quote(motion.name())).append(",\"samplers\":[");
    for(int i=0;i<tracks.size();i++){
     if(i>0)j.append(',');
-    j.append("{\"input\":").append(7+2*i).append(",\"output\":").append(8+2*i).append(",\"interpolation\":\"LINEAR\"}");
+    j.append("{\"input\":").append(inverseBind+1+2*i).append(",\"output\":").append(inverseBind+2+2*i).append(",\"interpolation\":\"LINEAR\"}");
    }
    j.append("],\"channels\":[");
    for(int i=0;i<tracks.size();i++){
@@ -77,6 +106,12 @@ public final class Glb {
   byte[] json=j.toString().getBytes("UTF-8");int pad=(4-json.length%4)%4;ByteBuffer header=ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN).putInt(0x46546c67).putInt(2).putInt(28+json.length+pad+bin.capacity()).putInt(json.length+pad).putInt(0x4e4f534a);
   File tmp=new File(out+".tmp");try(FileOutputStream o=new FileOutputStream(tmp)){o.write(header.array());o.write(json);for(int i=0;i<pad;i++)o.write(32);o.write(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putInt(bin.capacity()).putInt(0x004e4942).array());o.write(bin.array());o.getFD().sync();}FilesUtil.move(tmp,out);
   return validation;
+ }
+ private static void partNode(StringBuilder j,Mesh.Part part,int index,boolean skin){
+  j.append("{\"name\":").append(FilesUtil.quote(part.name())).append(",\"mesh\":").append(index);
+  if(skin)j.append(",\"skin\":0");
+  if(!part.role().equals("surface"))j.append(",\"extras\":{\"foundry_part_role\":").append(FilesUtil.quote(part.role())).append('}');
+  j.append('}');
  }
  private static void bufferView(StringBuilder j,int offset,int length){
   j.append(",{\"buffer\":0,\"byteOffset\":").append(offset).append(",\"byteLength\":").append(length).append('}');
