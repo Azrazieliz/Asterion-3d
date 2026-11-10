@@ -14,6 +14,17 @@ Baseline `ac9fb96c4280eb1409acf49165e523e402bfa6d8` on `work/reference-fidelity-
 
 ## Delivery sequence
 
+### Staged production and surface quality across all milestones
+
+The owner permits multiple automated production stages and refinement passes to increase final quality. Plan the stages around each asset's dependencies, carrying stable part IDs, identity, style, placement and bindings through geometry, topology, UVs, texture, colour, material, rig, physics and animation work. Texture and colour fidelity are release requirements across asset families.
+
+- In M1, persist editable textures, required material maps, stage dependencies and accepted intermediate revisions alongside geometry and rig data.
+- In M2 and M3, route each stage to a qualified local method, compare visible texture detail, palette, colour boundaries and material response with references, and repair defective regions. Reuse accepted stages and invalidate only affected dependencies.
+- In M4 and M5, review seams, stretching, transparency, colour consistency and material response during motion and in the target style. Preserve accepted details when refining forms or secondary motion.
+- In M7, checkpoint stage outputs and report quality, elapsed time, peak memory, storage and thermal cost. Bound retries, retain the best recoverable candidate and make unresolved defects visible.
+
+**Exit gate.** A real reference case improves through a targeted refinement, retains accepted geometry and surface detail, resumes from a saved stage, and exports with its textures, colours and material bindings intact. Inspect the final result in several views under controlled lighting and the target presentation, including deformation where applicable.
+
 ### M0 — Lock the acceptance cases and reference evidence
 
 - Record a separate private case for each supplied illustration, including the dragon. Keep other approved views, owned source assets and reference masks attached to the correct case. Record pose, camera, scale, part visibility, provenance and approvals where known.
