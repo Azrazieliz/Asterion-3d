@@ -2,6 +2,8 @@
 
 Authority: owner implementation assignment of 2026-11-09. The 0.1 production slice does not replace or narrow this scope. Existing NoWorld, Koikatsu, apps, sources, signers and user data must be preserved.
 
+The listed workflows, systems and acceptance examples are minimum coverage. Qualify the product on diverse real inputs outside the examples, including how the systems work together. Record missing capabilities found in production flows and carry them into the implementation and release checks. A passing example or working template alone cannot establish category coverage or visual quality.
+
 ## Required finished product
 
 One autonomous Android application on Samsung SM-S948B, Android 17, ARM64. Images, descriptions and existing 3D sources must produce finished, editable 3D assets without manual production. Characters, nonhuman creatures and unusual anatomy, weapons/equipment, architecture/interiors/caves, vegetation/terrain, mechanical objects, animations, expressions and multi-participant interactions are all required. Koikatsu is an optional source when an existing 3D asset needs work that Koikatsu cannot perform. No Koikatsu input is required for ordinary creation or when the asset is already complete in Koikatsu.

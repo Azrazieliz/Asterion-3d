@@ -110,7 +110,8 @@ public final class Glb {
  private static void partNode(StringBuilder j,Mesh.Part part,int index,boolean skin){
   j.append("{\"name\":").append(FilesUtil.quote(part.name())).append(",\"mesh\":").append(index);
   if(skin)j.append(",\"skin\":0");
-  if(!part.role().equals("surface"))j.append(",\"extras\":{\"foundry_part_role\":").append(FilesUtil.quote(part.role())).append('}');
+  if(!part.role().equals("surface")||!part.id().equals("asset"))j.append(",\"extras\":{\"foundry_part_id\":")
+   .append(FilesUtil.quote(part.id())).append(",\"foundry_part_role\":").append(FilesUtil.quote(part.role())).append('}');
   j.append('}');
  }
  private static void bufferView(StringBuilder j,int offset,int length){

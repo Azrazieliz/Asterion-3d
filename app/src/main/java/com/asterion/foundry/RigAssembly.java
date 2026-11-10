@@ -44,7 +44,9 @@ final class RigAssembly {
         for(int i=0;i<parts.size();i++){
             Mesh.Part part=parts.get(i);
             String name=part.name().length()>76?part.name().substring(0,76):part.name();
-            result.beginPart(actor+" "+name,part.role());
+            String id=actor.toLowerCase(java.util.Locale.ROOT)+"-"+part.id();
+            if(id.length()>64)id=id.substring(0,47)+"-"+FilesUtil.hash(id).substring(0,16);
+            result.beginPart(id,actor+" "+name,part.role());
             for(int v=part.firstVertex();v<source.partEnd(i);v++){
                 if((v&4095)==0)budget.check();
                 float[] vertex=source.vertices.get(v).clone();

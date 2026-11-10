@@ -5,10 +5,10 @@ public final class MainActivity extends Activity {
  Store store;LinearLayout body;TextView status;Spinner kind;EditText prompt,scale;String source="",page="Create",exportId, nextRecipe, filter=""; final Map<String,String> references = new LinkedHashMap<>();MeshView preview;Handler handler=new Handler();boolean visible;
  static final String KNOWN = "Find registered original";
  static final String HUMAN_REFERENCE = "Character reference candidate";
- String bindingReference, handoffProfile;
+ String bindingReference, handoffProfile, partBundle;
  Button motionPlaybackButton;
- final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Humanoid with separate tunic","Quadruped template","Articulated dragon","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
- public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}if(!ProductionService.active)store.recover();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show("Create");if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
+ final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Humanoid with separate tunic","Quadruped template","Articulated dragon","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.PART_HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
+ public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");partBundle=b.getString("partBundle");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}if(!ProductionService.active)store.recover();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show("Create");if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
  void label(String v){body.addView(text(v,14,MUTED));}
@@ -52,6 +52,9 @@ public final class MainActivity extends Activity {
        Button control = button(viewLabel(role), () -> pick(request, "image/*"));
        control.setTag(role);
       }
+     } else if (ProductionService.PART_HULL.equals(selected)) {
+      label("Use a ZIP of labelled transparent front and right views on shared canvases. The metre field is the full canvas height.");
+      button(partBundleLabel(),()->pick(24,"*/*")).setTag("part-bundle");
      } else if (needsOriginal(selected)) {
       if (KNOWN.equals(selected)) label("Reuse the original GLB registered to these exact image bytes.");
       if (ProductionService.VOLUME.equals(selected) || HUMAN_REFERENCE.equals(selected)) {
@@ -103,6 +106,10 @@ public final class MainActivity extends Activity {
   return source.isEmpty() ? "Choose original file" : "Replace original file";
  }
 
+ private String partBundleLabel() {
+  return partBundle==null?"Choose part reference ZIP":"Replace part reference ZIP";
+ }
+
  private void pick(int code, String type) {
   Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
   intent.setType(type);
@@ -145,13 +152,18 @@ public final class MainActivity extends Activity {
            && (!references.containsKey("front") || !references.containsKey("right"))) {
     throw new IllegalArgumentException("Choose both the front and right reference views");
    }
+   if (ProductionService.PART_HULL.equals(selected)&&partBundle==null) {
+    throw new IllegalArgumentException("Choose a part reference ZIP first");
+   }
    float value = Float.parseFloat(scale.getText().toString());
    if (!Float.isFinite(value) || value < .01 || value > 100) {
     throw new IllegalArgumentException("Use a size between 0.01 and 100");
    }
    JSONObject request = new JSONObject().put("kind", selected).put("description", name)
-           .put("scale", value).put("detail", ProductionService.VOLUME.equals(selected) ? 112 : ProductionService.HULL.equals(selected) ? 40 : 12)
-           .put("source", needsOriginal(selected) ? source : "").put("pauseAfterGeometry", pause);
+           .put("scale", value).put("detail", ProductionService.VOLUME.equals(selected) ? 112
+                   : ProductionService.HULL.equals(selected)||ProductionService.PART_HULL.equals(selected) ? 40 : 12)
+           .put("source", ProductionService.PART_HULL.equals(selected) ? partBundle : needsOriginal(selected) ? source : "")
+           .put("pauseAfterGeometry", pause);
    if (humanReference) request.put("human_reference",true);
    if (ProductionService.HULL.equals(selected)) {
     for (Map.Entry<String,String> reference : references.entrySet()) {
@@ -178,6 +190,7 @@ public final class MainActivity extends Activity {
   label("Character and creature");
   studioRecipe(HUMAN_REFERENCE);
   studioRecipe(ProductionService.HULL);
+  studioRecipe(ProductionService.PART_HULL);
   studioRecipe("Humanoid template");
   studioRecipe("Humanoid with separate tunic");
   studioRecipe("Quadruped template");
@@ -616,6 +629,7 @@ public final class MainActivity extends Activity {
   state.putString("exportId",exportId);
   state.putString("bindingReference",bindingReference);
   state.putString("handoffProfile",handoffProfile);
+  state.putString("partBundle",partBundle);
   for (Map.Entry<String,String> entry : references.entrySet()) state.putString(entry.getKey(),entry.getValue());
  }
 
@@ -669,12 +683,18 @@ public final class MainActivity extends Activity {
      runOnUiThread(() -> Toast.makeText(this,"Editable package exported",Toast.LENGTH_LONG).show());
      return;
     }
-    if (code != 1 && code != 3 && code != 23 && (code < 11 || code > 13)) return;
+    if (code != 1 && code != 3 && code != 23 && code != 24 && (code < 11 || code > 13)) return;
     File original;
     try (InputStream input = getContentResolver().openInputStream(uri)) {
      original = new SourceFiles(store.root).preserve(input);
     }
     runOnUiThread(() -> {
+     if (code == 24) {
+      partBundle=original.getAbsolutePath();
+      Button control=(Button)body.findViewWithTag("part-bundle");
+      if(control!=null)control.setText(partBundleLabel());
+      return;
+     }
      if (code == 23) {
       handoffProfile = original.getAbsolutePath();
       Button control = (Button) body.findViewWithTag("contract");

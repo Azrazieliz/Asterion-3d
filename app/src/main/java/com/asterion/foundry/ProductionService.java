@@ -29,6 +29,7 @@ public final class ProductionService extends Service {
     static final String VOLUME = "Image to 3D candidate";
     static final String DEPTH = "AI depth relief";
     static final String HULL = "Multi-view reconstruction";
+    static final String PART_HULL = "Calibrated part references";
     static final String REVISION = "Mesh revision";
     static final String FORM = "Saved form variant";
     static final String MOTION = "Skeletal animation";
@@ -141,6 +142,7 @@ public final class ProductionService extends Service {
         String id = job.getString("id");
         JSONObject request = new JSONObject(job.getString("request"));
         String kind = request.getString("kind");
+        boolean candidateOnly = VOLUME.equals(kind)||PART_HULL.equals(kind);
         File directory = store.project(id);
         long start = SystemClock.elapsedRealtime();
         check();
@@ -169,6 +171,7 @@ public final class ProductionService extends Service {
         }
         if (DEPTH.equals(kind)) signature.append("|depth-relief-v1|").append(MidasDepth.SHA256);
         if (HULL.equals(kind)) signature.append('|').append(VisualHull.METHOD);
+        if (PART_HULL.equals(kind)) signature.append('|').append(PartHull.METHOD);
         if (isRigTemplate(kind)) signature.append('|').append(SkinBlend.VERSION);
         if ("Humanoid with separate tunic".equals(kind)) signature.append('|').append(ClothDrape.VERSION);
         if ("Articulated dragon".equals(kind)) signature.append("|dragon_anatomy_v1");
@@ -220,7 +223,7 @@ public final class ProductionService extends Service {
         }
 
         stage(id, 2, "Auditing topology and writing GLB");
-        GeometryAudit.Result audit = GeometryAudit.inspect(candidate.mesh, this::check);
+        GeometryAudit.Result audit = PART_HULL.equals(kind) ? null : GeometryAudit.inspect(candidate.mesh, this::check);
         File asset = new File(directory, "asset.glb");
         JSONObject motionEvidence = null;
         if (MOTION.equals(kind)) {
@@ -247,9 +250,9 @@ public final class ProductionService extends Service {
                 .put("cache_key", key).put("reused", reused)
                 .put("duration_ms", SystemClock.elapsedRealtime() - start)
                 .put("thermal_status", getSystemService(PowerManager.class).getCurrentThermalStatus())
-                .put("outcome", VOLUME.equals(kind) ? "candidate" : "complete")
+                .put("outcome", candidateOnly ? "candidate" : "complete")
                 .put("backend", VOLUME.equals(kind) ? "ONNX Runtime ARM64 CPU" : "Android CPU / ART")
-                .put("production_export_admitted", !VOLUME.equals(kind))
+                .put("production_export_admitted", !candidateOnly)
                 .put("vulkan_compute", "not_implemented").put("qnn", "not_implemented")
                 .put("unreal_import_executed", false).put("noworld_binding", "unbound")
                 .put("visual_quality", "UNVALIDATED")
@@ -257,14 +260,14 @@ public final class ProductionService extends Service {
                 .put("production_method", method(kind))
                 .put("source_appearance_preserved", false)
                 .put("mobile_optimization", "not_validated")
-                .put("rig_validation", VOLUME.equals(kind) ? "unrigged" : candidate.mesh.bones.isEmpty()
+                .put("rig_validation", candidateOnly ? "unrigged" : candidate.mesh.bones.isEmpty()
                         ? "not_applicable" : candidate.mesh.blended() ? "hierarchy_and_normalized_blend_weights"
                         : "hierarchy_and_normalized_rigid_weights_only");
-        if (candidate.mesh.parts().size() > 1) {
+        if (candidate.mesh.parts().size() > 1 || PART_HULL.equals(kind)) {
             JSONArray parts = new JSONArray();
             for (int i = 0; i < candidate.mesh.parts().size(); i++) {
                 Mesh.Part part = candidate.mesh.parts().get(i);
-                parts.put(new JSONObject().put("name",part.name()).put("role",part.role())
+                parts.put(new JSONObject().put("id",part.id()).put("name",part.name()).put("role",part.role())
                         .put("triangles",(candidate.mesh.partEnd(i)-part.firstVertex())/3));
             }
             receipt.put("mesh_parts",parts).put("shared_skin",!candidate.mesh.bones.isEmpty());
@@ -284,16 +287,7 @@ public final class ProductionService extends Service {
                     .put("form_generation", "deterministic_proportions_and_material_tint")
                     .put("canonical_form_admitted", false);
         }
-        if (audit != null) {
-            receipt.put("topology", new JSONObject()
-                    .put("boundary_edges", audit.boundaryEdges())
-                    .put("nonmanifold_edges", audit.nonManifoldEdges())
-                    .put("winding_conflicts", audit.windingConflicts())
-                    .put("collapsed_triangles", audit.collapsedTriangles())
-                    .put("weld_tolerance_metres", audit.toleranceMetres()));
-        } else {
-            receipt.put("topology", new JSONObject().put("status", "skipped_over_vertex_budget"));
-        }
+        receipt.put("topology",PART_HULL.equals(kind)?new JSONObject().put("status","reported_per_part"):topology(audit));
         FilesUtil.write(new File(directory, "receipt.json"), receipt.toString(2));
         FilesUtil.write(new File(directory, "import-manifest.json"), new JSONObject()
                 .put("schema", "asterion.foundry.intermediate.v1")
@@ -304,11 +298,18 @@ public final class ProductionService extends Service {
                 .put("manifestation_id", JSONObject.NULL).put("native_acceptance", false)
                 .put("warnings", new JSONArray().put("NoWorld adapter has not admitted this asset"))
                 .toString(2));
-        if (VOLUME.equals(kind)) {
+        if (candidateOnly) {
             store.finishCandidate(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
         } else {
             store.finish(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
         }
+    }
+
+    private static JSONObject topology(GeometryAudit.Result audit) throws Exception {
+        if(audit==null)return new JSONObject().put("status","skipped_over_vertex_budget");
+        return new JSONObject().put("boundary_edges",audit.boundaryEdges()).put("nonmanifold_edges",audit.nonManifoldEdges())
+                .put("winding_conflicts",audit.windingConflicts()).put("collapsed_triangles",audit.collapsedTriangles())
+                .put("weld_tolerance_metres",audit.toleranceMetres());
     }
 
     private void preserveGlb(JSONObject job, JSONObject request, File directory, Map<String, File> originals,
@@ -432,11 +433,12 @@ public final class ProductionService extends Service {
     }
 
     private static Candidate readCandidate(File mesh, File metrics, File texture, String kind) {
-        if (!mesh.isFile() || (HULL.equals(kind) || DEPTH.equals(kind) || VOLUME.equals(kind)) && !metrics.isFile()) return null;
+        if (!mesh.isFile() || (HULL.equals(kind) || PART_HULL.equals(kind) || DEPTH.equals(kind) || VOLUME.equals(kind)) && !metrics.isFile()) return null;
         try {
             JSONObject evidence = metrics.isFile()
                     ? new JSONObject(Files.readString(metrics.toPath())) : new JSONObject();
-            if (HULL.equals(kind) && !evidence.has("texture_sha256")) return null;
+            if ((HULL.equals(kind)||PART_HULL.equals(kind)) && !evidence.has("texture_sha256")) return null;
+            if (PART_HULL.equals(kind)&&!PartHull.METHOD.equals(evidence.optString("method"))) return null;
             if (VOLUME.equals(kind) && (!TripoModels.VERSION.equals(evidence.optString("model_pack"))
                     || !TriplaneMesh.PIPELINE_VERSION.equals(evidence.optString("pipeline")))) return null;
             byte[] image = null;
@@ -502,18 +504,27 @@ public final class ProductionService extends Service {
                     .put("height_cells", result.resolution())
                     .put("occupied_cells", result.occupied()).put("components_6", result.components());
             int size = (int) Math.sqrt(result.atlas().length);
-            Bitmap atlas = Bitmap.createBitmap(result.atlas(),size,size,Bitmap.Config.ARGB_8888);
-            try {
-                ByteArrayOutputStream png = new ByteArrayOutputStream();
-                if (!atlas.compress(Bitmap.CompressFormat.PNG,100,png)) {
-                    throw new IOException("Reference atlas could not be encoded");
-                }
-                metrics.put("textured_triangles", result.texturedTriangles())
-                        .put("texture_size", size).put("material", "projected_reference_base_color");
-                return new Candidate(result.mesh(), metrics, png.toByteArray());
-            } finally {
-                atlas.recycle();
+            metrics.put("textured_triangles", result.texturedTriangles())
+                    .put("texture_size", size).put("material", "projected_reference_base_color");
+            return new Candidate(result.mesh(),metrics,encodeAtlas(result.atlas(),size,size));
+        }
+        if (PART_HULL.equals(kind)) {
+            stage(id,0,"Carving the labelled reference parts");
+            PartHull.Result result=PartReferenceBundle.reconstruct(files.get("source"),scale,detail,this::check);
+            JSONArray measurements=new JSONArray();
+            for(PartHull.Evidence evidence:result.parts()){
+                measurements.put(new JSONObject().put("id",evidence.part().id()).put("role",evidence.part().role())
+                        .put("front_iou",evidence.frontIou()).put("right_iou",evidence.rightIou())
+                        .put("back_iou",evidence.backIou()==null?JSONObject.NULL:evidence.backIou())
+                        .put("occupied_cells",evidence.occupiedCells()).put("components_6",evidence.connectedComponents())
+                        .put("topology",topology(evidence.topology())));
             }
+            JSONObject metrics=new JSONObject().put("method",PartHull.METHOD).put("parts",measurements)
+                    .put("evidence","supplied_part_masks_in_shared_orthographic_frames")
+                    .put("canvas_height_metres",scale).put("height_cells",detail)
+                    .put("atlas_width",result.width()).put("atlas_height",result.height())
+                    .put("cross_part_fit","unverified").put("hidden_geometry","inferred_by_space_carving");
+            return new Candidate(result.mesh(),metrics,encodeAtlas(result.atlas(),result.width(),result.height()));
         }
         if (REVISION.equals(kind)) {
             JSONArray axes = request.getJSONArray("axes");
@@ -563,6 +574,15 @@ public final class ProductionService extends Service {
         if ("Humanoid with separate tunic".equals(kind)) bound.metrics.put("garment_fit",ClothDrape.VERSION)
                 .put("animated_cloth_simulation",false);
         return bound;
+    }
+
+    private static byte[] encodeAtlas(int[] pixels,int width,int height) throws IOException {
+        Bitmap atlas=Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);
+        try{
+            ByteArrayOutputStream png=new ByteArrayOutputStream();
+            if(!atlas.compress(Bitmap.CompressFormat.PNG,100,png))throw new IOException("Reference atlas could not be encoded");
+            return png.toByteArray();
+        }finally{atlas.recycle();}
     }
 
     private Candidate blendSkin(Mesh mesh, byte[] texture) throws Exception {
@@ -634,6 +654,7 @@ public final class ProductionService extends Service {
     private static String method(String kind) {
         return switch (kind) {
             case HULL -> VisualHull.METHOD;
+            case PART_HULL -> PartHull.METHOD;
             case VOLUME -> "triposr_volume_surface_vertex_colour";
             case DEPTH -> "midas_relative_depth_relief_v1";
             case REVISION -> "non_destructive_mesh_revision";

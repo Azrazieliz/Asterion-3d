@@ -20,14 +20,24 @@ public final class VisualHull {
         private final int top;
         private final int subjectWidth;
         private final int subjectHeight;
+        private final boolean calibrated;
 
         public View(int[] pixels, int width, int height) {
+            this(pixels,width,height,false);
+        }
+
+        static View calibrated(int[] pixels,int width,int height) {
+            return new View(pixels,width,height,true);
+        }
+
+        private View(int[] pixels,int width,int height,boolean calibrated) {
             if (width < 4 || height < 4 || width > 512 || height > 512
                     || pixels.length != width * height) {
                 throw new IllegalArgumentException("Reference raster dimensions are outside the supported budget");
             }
             this.pixels = Arrays.copyOf(pixels, pixels.length);
             this.width = width;
+            this.calibrated = calibrated;
             boolean transparency = false;
             for (int pixel : pixels) {
                 if ((pixel >>> 24) < 32) {
@@ -38,6 +48,9 @@ public final class VisualHull {
 
             // For opaque input require all four corners to agree on background.
             int background = pixels[0];
+            if (calibrated && !transparency) {
+                throw new IllegalArgumentException("Calibrated part images need a transparent background");
+            }
             if (!transparency) {
                 for (int corner : new int[]{width - 1, width * (height - 1), pixels.length - 1}) {
                     if (distance(background, pixels[corner]) > 32) {
@@ -67,11 +80,15 @@ public final class VisualHull {
             if (count < 16 || maxX - minX < 2 || maxY - minY < 2 || count == pixels.length) {
                 throw new IllegalArgumentException("No isolated foreground found in a reference");
             }
-            left = minX;
-            top = minY;
-            subjectWidth = maxX - minX + 1;
-            subjectHeight = maxY - minY + 1;
+            left = calibrated ? 0 : minX;
+            top = calibrated ? 0 : minY;
+            subjectWidth = calibrated ? width : maxX - minX + 1;
+            subjectHeight = calibrated ? height : maxY - minY + 1;
         }
+
+        int width() { return width; }
+        int height() { return pixels.length/width; }
+        boolean calibrated() { return calibrated; }
 
         double aspect() {
             return (double) subjectWidth / subjectHeight;

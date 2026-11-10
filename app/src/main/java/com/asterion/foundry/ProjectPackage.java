@@ -78,7 +78,7 @@ final class ProjectPackage {
                 Mesh.Part part=parts.get(i);
                 String path="parts/part-"+(i+1)+".glb";
                 Glb.write(mesh.extractPart(i),temporary,texture,motion);
-                entries.put(new JSONObject().put("name",part.name()).put("role",part.role())
+                entries.put(new JSONObject().put("id",part.id()).put("name",part.name()).put("role",part.role())
                         .put("file",path).put("sha256",FilesUtil.hash(temporary)));
                 add(zip,path,temporary);
             }
