@@ -1,7 +1,7 @@
 package com.asterion.foundry;
 import android.app.*;import android.content.*;import android.content.pm.*;import android.graphics.Color;import android.graphics.drawable.GradientDrawable;import android.net.Uri;import android.os.*;import android.view.*;import android.widget.*;import org.json.*;import java.io.*;import java.util.*;import java.util.zip.*;
 public final class MainActivity extends Activity {
- final int BG=0xff10141e,PANEL=0xff1b2432,INK=0xffeff5f7,MUTED=0xffa7b6c8,ACCENT=0xff83e5c6;
+ final int BG=0xff0d1420,PANEL=0xff19263a,RAISED=0xff253650,BORDER=0xff32465e,INK=0xfff1f6fa,MUTED=0xffafc1d2,ACCENT=0xff80e6ca;
  Store store;LinearLayout body;TextView status;Spinner kind;EditText prompt,scale;String source="",page="Create",exportId, nextRecipe, filter=""; final Map<String,String> references = new LinkedHashMap<>();MeshView preview;Handler handler=new Handler();boolean visible;
  static final String KNOWN = "Find registered original";
  static final String HUMAN_REFERENCE = "Character reference candidate";
@@ -12,9 +12,116 @@ public final class MainActivity extends Activity {
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
  void label(String v){body.addView(text(v,14,MUTED));}
- Button button(String name,Runnable action){Button b=new Button(this);b.setText(name);b.setTextColor(INK);b.setAllCaps(false);GradientDrawable d=new GradientDrawable();d.setColor(PANEL);d.setCornerRadius(dp(12));b.setBackground(d);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(48));p.setMargins(0,dp(5),0,dp(5));body.addView(b,p);b.setOnClickListener(v->{try{action.run();}catch(Exception e){error(e);}});return b;}
- void show(String dest){if(preview!=null){preview.onPause();preview=null;}motionPlaybackButton=null;page=dest;LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setBackgroundColor(BG);root.setPadding(dp(18),dp(12),dp(18),dp(12));TextView title=text("ASTERION  /  FOUNDRY",14,ACCENT);root.addView(title);HorizontalScrollView nav=new HorizontalScrollView(this);LinearLayout row=new LinearLayout(this);for(String p:new String[]{"Create","Projects","Studio","Library","Queue","Koikatsu","Performance"}){TextView tab=text(p,15,p.equals(dest)?ACCENT:MUTED);tab.setPadding(dp(10),dp(8),dp(10),dp(8));tab.setOnClickListener(v->show(p));row.addView(tab);}nav.addView(row);root.addView(nav);ScrollView scroll=new ScrollView(this);body=new LinearLayout(this);body.setOrientation(1);scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);body.addView(text(dest,30,INK));try{switch(dest){case "Create":create();break;case "Projects":projects(false);break;case "Studio":studio();break;case "Library":library();break;case "Queue":projects(true);break;case "Koikatsu":kk();break;case "Performance":performance();break;}}catch(Exception e){error(e);}}
- void create() {
+ Button button(String name,Runnable action){return buttonIn(body,name,action);}
+ Button buttonIn(LinearLayout parent,String name,Runnable action){
+  Button control=new Button(this);control.setText(name);control.setTextColor(INK);
+  control.setTextSize(14);control.setAllCaps(false);
+  control.setGravity(Gravity.CENTER_VERTICAL);control.setPadding(dp(16),0,dp(12),0);
+  GradientDrawable shape=new GradientDrawable();shape.setColor(PANEL);
+  shape.setCornerRadius(dp(14));shape.setStroke(dp(1),BORDER);
+  control.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(0x3380e6ca),shape,null));
+  LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(52));
+  p.setMargins(0,dp(5),0,dp(5));parent.addView(control,p);
+  control.setOnClickListener(v->{try{action.run();}catch(Exception e){error(e);}});
+  return control;
+ }
+ void section(String title,String subtitle){
+  TextView h=text(title,19,INK);
+  h.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+  h.setPadding(0,dp(15),0,dp(3));body.addView(h);
+  if(subtitle!=null&&!subtitle.isBlank())label(subtitle);
+ }
+ void actionCard(String title,String subtitle,Runnable onClick){
+  LinearLayout card=new LinearLayout(this);card.setOrientation(1);
+  card.setPadding(dp(17),dp(11),dp(17),dp(12));
+  GradientDrawable d=new GradientDrawable();d.setColor(PANEL);
+  d.setCornerRadius(dp(18));d.setStroke(dp(1),BORDER);
+  card.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(0x3380e6ca),d,null));
+  TextView heading=text(title,17,INK);
+  heading.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+  card.addView(heading);card.addView(text(subtitle,13,MUTED));
+  LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);
+  p.setMargins(0,dp(6),0,dp(6));body.addView(card,p);
+  card.setContentDescription(title+". "+subtitle);card.setClickable(true);
+  card.setFocusable(true);card.setOnClickListener(v->{try{onClick.run();}catch(Exception e){error(e);}});
+ }
+ GradientDrawable panelShape(int color,int radius){
+  GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;
+ }
+
+void show(String dest){
+  if(preview!=null){preview.onPause();preview=null;}
+  motionPlaybackButton=null;page=dest;
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setBackgroundColor(BG);
+  LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
+  header.setPadding(dp(20),dp(12),dp(18),dp(10));
+  LinearLayout brand=new LinearLayout(this);brand.setOrientation(1);
+  TextView small=text("ASTERION",11,ACCENT);small.setLetterSpacing(.15f);
+  brand.addView(small);
+  TextView big=text("3D Foundry",22,INK);
+  big.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+  brand.addView(big);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+  TextView tools=text("Tools",14,ACCENT);tools.setGravity(Gravity.CENTER);
+  tools.setPadding(dp(14),dp(10),dp(14),dp(10));
+  tools.setBackground(panelShape(RAISED,12));
+  tools.setContentDescription("Specialist studio, Koikatsu and diagnostics");
+  tools.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("More tools")
+    .setItems(new String[]{"Character and creature studio","Koikatsu source tools","Performance and diagnostics"},
+      (dialog,n)->show(new String[]{"Studio","Koikatsu","Performance"}[n])).show());
+  header.addView(tools);root.addView(header);
+  ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);
+  body=new LinearLayout(this);body.setOrientation(1);
+  body.setPadding(dp(20),0,dp(20),dp(25));scroll.addView(body);
+  root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+  LinearLayout nav=new LinearLayout(this);nav.setPadding(dp(9),dp(7),dp(9),dp(9));
+  nav.setBackgroundColor(0xff132033);
+  for(String tab:new String[]{"Create","Projects","Queue","Library"}){
+   boolean active=dest.equals(tab);
+   TextView target=text(tab,13,active?BG:MUTED);
+   target.setGravity(Gravity.CENTER);
+   target.setTypeface(android.graphics.Typeface.DEFAULT,active?1:0);
+   target.setBackground(panelShape(active?ACCENT:0xff132033,13));
+   LinearLayout.LayoutParams weight=new LinearLayout.LayoutParams(0,dp(48),1);
+   weight.setMargins(dp(3),0,dp(3),0);nav.addView(target,weight);
+   target.setOnClickListener(v->show(tab));
+  }
+  root.addView(nav);setContentView(root);
+  try{
+   switch(dest){
+    case "Create":create();break;
+    case "Projects":projects(false);break;
+    case "Queue":projects(true);break;
+    case "Studio":studio();break;
+    case "Library":library();break;
+    case "Koikatsu":kk();break;
+    case "Performance":performance();break;
+   }
+  }catch(Exception e){error(e);}
+ }
+
+void create(){
+  if(nextRecipe==null){
+   section("Create something new","Pick a starting point. All production runs offline; reconstruction quality is reviewed separately.");
+   actionCard("From an image","Generate a 3D candidate with the built-in models; refine and inspect the result.",
+     ()->openCreator(ProductionService.VOLUME));
+   actionCard("Character or creature","Use an illustration to begin anatomy-aware reconstruction.",
+     ()->openCreator(HUMAN_REFERENCE));
+   actionCard("From a description","Create a supported object or environment recipe.",
+     ()->openCreator("Route from description"));
+   actionCard("From a 3D file","Preserve the exact original GLB and prepare it for further editing.",
+     ()->openCreator(ProductionService.ORIGINAL_GLB));
+   section("Other workflows","Precise multi-view input and specialist production methods.");
+   button("Use front and side reference views",()->openCreator(ProductionService.HULL));
+   button("All creation methods and studios",()->show("Studio"));
+   return;
+  }
+  createForm();
+ }
+ void openCreator(String recipe){nextRecipe=recipe;show("Create");}
+ void createForm() {
+
   label("Offline production");
   prompt = new EditText(this);
   prompt.setTextColor(INK);
