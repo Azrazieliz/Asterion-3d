@@ -332,6 +332,7 @@ public final class ProductionService extends Service {
             throw new IOException("Saved base-colour image cannot be decoded");
         }
         BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = 1;
         while (dimensions.outWidth / options.inSampleSize > 512
                 || dimensions.outHeight / options.inSampleSize > 512) options.inSampleSize *= 2;
         Bitmap bitmap = BitmapFactory.decodeByteArray(texture, 0, texture.length, options);
