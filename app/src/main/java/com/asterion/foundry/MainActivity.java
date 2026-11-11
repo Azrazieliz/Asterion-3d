@@ -301,7 +301,7 @@ public final class MainActivity extends Activity {
    }
    if (complete) {
     button("Create editable revision", () -> revisionDialog(id, request));
-    button("Edit individual part colour", () -> choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")));
+    button("Edit individual part colour", () -> { try { choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")); } catch (Exception failure) { error(failure); } });
     button("Export editable package", () -> export(id));
     if (!mesh.bones.isEmpty()) {
      String baseSha = receipt.getString("editable_mesh_sha256");
