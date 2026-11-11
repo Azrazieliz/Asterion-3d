@@ -22,6 +22,7 @@ java -cp test-output/classes com.asterion.foundry.DragonRigAcceptance
 java -cp test-output/classes com.asterion.foundry.ChoreographyAcceptance
 java -cp test-output/classes com.asterion.foundry.PartHullAcceptance
 python3 scripts/validate_glb.py test-output/*.glb
+python3 scripts/validate_stl.py test-output/print_box.stl test-output/print_large.stl
 if [[ -n "${FOUNDRY_JSON_JAR:-}" ]]; then
   javac -cp "test-output/classes:$FOUNDRY_JSON_JAR" -d test-output/classes \
     app/src/main/java/com/asterion/foundry/{OriginalGlb,NoWorldHandoff,OriginalMaterialVariant,StageManifest,SurfaceAudit}.java \

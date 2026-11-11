@@ -43,6 +43,9 @@ public final class PrintExportAcceptance {
         PrintExport.Audit exported=PrintExport.writeStrict(mesh,settings,output,()->{});
         if(!audit.equals(exported))throw new AssertionError("Preflight changed during export");
         byte[] stl=output.toByteArray();
+        File exportedFile=new File("test-output/print_box.stl");
+        Files.createDirectories(exportedFile.toPath().getParent());
+        Files.write(exportedFile.toPath(),stl);
         if(stl.length!=84+12*50)throw new AssertionError("Incorrect binary STL length");
         int triangles=ByteBuffer.wrap(stl).order(ByteOrder.LITTLE_ENDIAN).getInt(80);
         if(triangles!=12)throw new AssertionError("Wrong binary STL triangle count");
@@ -118,5 +121,12 @@ public final class PrintExportAcceptance {
         PrintExport.Audit quality=PrintExport.inspect(mesh,new PrintExport.Options(140),()->{});
         if(!quality.technicallyClosed()||quality.triangles()!=63000)
             throw new AssertionError("Large object print audit failed: "+quality);
+        File exportedFile=new File("test-output/print_large.stl");
+        Files.createDirectories(exportedFile.toPath().getParent());
+        try(java.io.OutputStream output=Files.newOutputStream(exportedFile.toPath())){
+            PrintExport.writeStrict(mesh,new PrintExport.Options(140),output,()->{});
+        }
+        if(exportedFile.length()!=84+63000L*50)
+            throw new AssertionError("Large mesh STL length incorrect");
     }
 }

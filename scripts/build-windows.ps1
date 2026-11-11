@@ -47,6 +47,8 @@ if(-not [string]::IsNullOrWhiteSpace($jsonJar) -and (Test-Path $jsonJar)){
 }
 & 'D:\Tools\Python311\python.exe' "$root\scripts\validate_glb.py" @(Get-ChildItem "$root\test-output" -Filter '*.glb' | ForEach-Object {$_.FullName})
 if($LASTEXITCODE -ne 0){throw 'GLB validation failed'}
+& 'D:\Tools\Python311\python.exe' "$root\scripts\validate_stl.py" "$root\test-output\print_box.stl" "$root\test-output\print_large.stl"
+if($LASTEXITCODE -ne 0){throw 'Independent print STL validation failed'}
 Pop-Location
 & "$tools\aapt2.exe" compile --dir "$src\res" -o "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'Resources failed'}
