@@ -207,6 +207,9 @@ public final class ProductionService extends Service {
         File texture = new File(directory, "base-color.png");
         File cacheTexture = new File(store.root, "cache/" + key + ".png");
         StageManifest stageManifest = new StageManifest(directory);
+        // Never silently promote modified or partial outputs to a resumed stage.
+        // Old projects without ledgers still load using the existing path.
+        stageManifest.verifyAll();
 
         stage(id, job.getInt("stage"), "Preparing geometry");
         Candidate candidate = readCandidate(checkpoint, checkpointMetrics, texture, kind);

@@ -41,7 +41,26 @@ public final class Store extends SQLiteOpenHelper {
    database.endTransaction();
   }
  }
- public synchronized void recover(){getWritableDatabase().execSQL("UPDATE jobs SET state='paused',message='Interrupted. Resume from durable checkpoint.' WHERE state='running'");}
+ public static final String INTERRUPTED = "Interrupted. Resume from durable checkpoint.";
+ public synchronized void recover(){
+  ContentValues v=new ContentValues();
+  v.put("state","paused");
+  v.put("message",INTERRUPTED);
+  getWritableDatabase().update("jobs",v,"state=?",new String[]{"running"});
+ }
+ /**
+  * Resume only work stopped by an unexpected process exit. An explicit user,
+  * resource, thermal or Android-time-limit pause must remain paused.
+  * Call from the foreground activity; Android background launch restrictions
+  * prohibit claiming unattended boot-time execution.
+  */
+ public synchronized int requeueInterrupted() {
+  ContentValues v=new ContentValues();
+  v.put("state","queued");
+  v.put("message","Resuming from saved checkpoint after process interruption");
+  return getWritableDatabase().update("jobs",v,"state=? AND message=?",
+          new String[]{"paused",INTERRUPTED});
+ }
  public synchronized void record(String id,String recipe,long ms,boolean reused,JSONObject receipt){ContentValues v=new ContentValues();v.put("job",id);v.put("recipe",recipe);v.put("duration_ms",ms);v.put("reused",reused?1:0);v.put("receipt",receipt.toString());v.put("recorded",System.currentTimeMillis());getWritableDatabase().insertOrThrow("history",null,v);}
  public String memory(){try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*),COALESCE(SUM(reused),0),COALESCE(AVG(duration_ms),0) FROM history",null)){c.moveToFirst();return c.getInt(0)+" recorded operations · "+c.getInt(1)+" cache reuses · "+c.getLong(2)+" ms average";}}
  public File project(String id){File f=new File(root,"projects/"+id);f.mkdirs();return f;}
