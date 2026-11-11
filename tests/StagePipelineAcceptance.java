@@ -37,6 +37,9 @@ public final class StagePipelineAcceptance {
                 throw new AssertionError("Surface audit lost sample or transparency");
             if (!"unverified".equals(audit.getString("reference_texture_fidelity")))
                 throw new AssertionError("Unreviewed texture was falsely accepted");
+            if(audit.getInt("uv_overlap_checked_triangles")<1
+                    || "not_checked".equals(audit.getString("uv_overlap")))
+                throw new AssertionError("UV overlap audit failed to emit bounded evidence");
             FilesUtil.write(base,new byte[]{1,2,3,4});
             ledger.publish("surface",Map.of("geometry_sha256",FilesUtil.hash(meshFile)),
                     Map.of("base-color.png",base),2);

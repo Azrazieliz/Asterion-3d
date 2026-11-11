@@ -39,6 +39,7 @@ final class SurfaceAudit {
                     - (b[7] - a[7]) * (c[6] - a[6]);
             if (Math.abs(area2) < 1e-10) collapsedUV++;
         }
+        UvOverlapAudit.Result uvOverlap = UvOverlapAudit.inspect(mesh);
         JSONObject audit = new JSONObject()
                 .put("schema", "asterion.foundry.surface-audit.v1")
                 .put("vertex_palette_5bit_bins", quantizedVertexColors.size())
@@ -46,7 +47,15 @@ final class SurfaceAudit {
                 .put("uv_nonfinite_vertices", invalidUV)
                 .put("uv_degenerate_triangles", collapsedUV)
                 .put("vertex_rgba_outside_01_components", outsideColors)
-                .put("uv_overlap", "not_checked")
+                .put("uv_overlap", uvOverlap.status())
+                .put("uv_overlap_checked_triangles", uvOverlap.sampledTriangles())
+                .put("uv_overlap_total_triangles", uvOverlap.totalTriangles())
+                .put("uv_overlap_skipped_triangles", uvOverlap.skippedTriangles())
+                .put("uv_overlap_pairs_compared", uvOverlap.pairsCompared())
+                .put("uv_overlapping_triangle_pairs", uvOverlap.overlappingPairs())
+                .put("uv_cross_part_overlap_pairs", uvOverlap.crossPartPairs())
+                .put("uv_overlap_pair_budget_exceeded", uvOverlap.budgetExceeded())
+                .put("uv_overlap_visual_interpretation", "requires_review_for_mirrors_and_shared_atlases")
                 .put("texture_seams", "not_checked")
                 .put("reference_texture_fidelity", "unverified")
                 .put("source_palette_fidelity", "unverified")
