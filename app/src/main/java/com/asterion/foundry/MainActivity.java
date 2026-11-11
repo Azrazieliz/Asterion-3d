@@ -2,7 +2,7 @@ package com.asterion.foundry;
 import android.app.*;import android.content.*;import android.content.pm.*;import android.graphics.Color;import android.graphics.drawable.GradientDrawable;import android.net.Uri;import android.os.*;import android.view.*;import android.widget.*;import org.json.*;import java.io.*;import java.util.*;import java.util.zip.*;
 public final class MainActivity extends Activity {
  final int BG=0xff0d1420,PANEL=0xff19263a,RAISED=0xff253650,BORDER=0xff32465e,INK=0xfff1f6fa,MUTED=0xffafc1d2,ACCENT=0xff80e6ca;
- Store store;LinearLayout body;TextView status;Spinner kind;EditText prompt,scale;String source="",page="Create",exportId, nextRecipe, filter=""; final Map<String,String> references = new LinkedHashMap<>();MeshView preview;Handler handler=new Handler();boolean visible;
+ Store store;LinearLayout body;TextView status;Spinner kind;EditText prompt,scale;String source="",page="Create",exportId, nextRecipe, filter=""; final Map<String,String> references = new LinkedHashMap<>(); final Map<String,String> sheetOriginals=new LinkedHashMap<>(); final Map<String,String> sheetCrops=new LinkedHashMap<>();MeshView preview;Handler handler=new Handler();boolean visible;
  static final String KNOWN = "Find registered original";
  static final String HUMAN_REFERENCE = "Character reference candidate";
  String bindingReference, handoffProfile, partBundle;
@@ -14,7 +14,11 @@ public final class MainActivity extends Activity {
  pendingMapHash=b.getString("pendingMapHash");pendingMapPart=b.getString("pendingMapPart");
  pendingMapChannel=b.getString("pendingMapChannel");printExportId=b.getString("printExportId");
   printHeightMm=b.getDouble("printHeightMm",180);
-  printSeparateClosedShells=b.getBoolean("printSeparateClosedShells",false);for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
+  printSeparateClosedShells=b.getBoolean("printSeparateClosedShells",false);for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));
+  for(String role:new String[]{"source","front","right","back"}){
+   if(b.containsKey("sheet_original_"+role))sheetOriginals.put(role,b.getString("sheet_original_"+role));
+   if(b.containsKey("sheet_crop_"+role))sheetCrops.put(role,b.getString("sheet_crop_"+role));
+  }}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
  void label(String v){body.addView(text(v,14,MUTED));}
@@ -234,6 +238,66 @@ void create(){
   return partBundle==null?"Choose part reference ZIP":"Replace part reference ZIP";
  }
 
+
+ private void commitSelectedImage(String role,File selected,File original,JSONObject evidence){
+  if(role.equals("source"))source=selected.getAbsolutePath();
+  else references.put(role,selected.getAbsolutePath());
+  if(evidence==null){sheetOriginals.remove(role);sheetCrops.remove(role);}
+  else{
+   sheetOriginals.put(role,original.getAbsolutePath());
+   sheetCrops.put(role,evidence.toString());
+  }
+  Button control=(Button)body.findViewWithTag(role);
+  if(control!=null)control.setText(role.equals("source")?originalLabel():viewLabel(role));
+ }
+ private void chooseReferenceRegion(String role,File original){
+  try{
+   android.graphics.BitmapFactory.Options info=new android.graphics.BitmapFactory.Options();
+   info.inJustDecodeBounds=true;
+   android.graphics.BitmapFactory.decodeFile(original.getAbsolutePath(),info);
+   if(info.outWidth<ReferenceCrop.MIN_PIXELS||info.outHeight<ReferenceCrop.MIN_PIXELS)
+    throw new IOException("Reference image too small to crop");
+   SourceFiles.Raster previewData=SourceFiles.decode(original,ReferenceCrop.MAX_PREVIEW);
+   android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(previewData.pixels(),
+       previewData.width(),previewData.height(),android.graphics.Bitmap.Config.ARGB_8888);
+   ReferenceCropView previewCrop=new ReferenceCropView(this,bitmap);
+   LinearLayout content=new LinearLayout(this);content.setOrientation(1);
+   content.setPadding(dp(14),0,dp(14),0);
+   content.addView(text("Select ONE character or camera view with a finger drag. "
+     +"Exclude other figures, notes, palettes and detail crops. The original stays untouched.",14,INK));
+   int available=(int)(getResources().getDisplayMetrics().heightPixels*.52f);
+   content.addView(previewCrop,new LinearLayout.LayoutParams(-1,Math.min(dp(360),available)));
+   content.addView(text("Use the full image only for a single subject in one coherent view. "
+     +"View cropping does not certify visual fidelity.",12,MUTED));
+   AlertDialog dialog=new AlertDialog.Builder(this)
+    .setTitle("Select "+(role.equals("source")?"3D reference":role+" view"))
+    .setView(content).setNeutralButton("Use full image",null)
+    .setNegativeButton("Cancel",null).setPositiveButton("Use selection",null).create();
+   dialog.setOnShowListener(unused->{
+    dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{
+     commitSelectedImage(role,original,original,null);dialog.dismiss();
+    });
+    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+     try{
+      ReferenceCrop.Box region=previewCrop.selectedBox(info.outWidth,info.outHeight);
+      dialog.dismiss();
+      new Thread(()->{
+       try{
+        SourceFiles.CroppedSource selected=new SourceFiles(store.root).cropPreserved(original,region);
+        JSONObject evidence=selected.evidence();
+        runOnUiThread(()->{
+         commitSelectedImage(role,selected.derived(),selected.original(),evidence);
+         Toast.makeText(this,"Source view preserved with original provenance",Toast.LENGTH_SHORT).show();
+        });
+       }catch(Exception err){runOnUiThread(()->error(err));}
+      },"FoundryReferenceCrop").start();
+     }catch(Exception err){error(err);}
+    });
+   });
+   dialog.show();
+  }catch(Exception err){error(err);}
+ }
+
  private void pick(int code, String type) {
   Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
   intent.setType(type);
@@ -287,6 +351,18 @@ void create(){
            .put("source", ProductionService.PART_HULL.equals(selected) ? partBundle : needsOriginal(selected) ? source : "")
            .put("pauseAfterGeometry", pause);
    if (humanReference) request.put("human_reference",true);
+   JSONObject provenance=new JSONObject();
+   for(Map.Entry<String,String> row:sheetCrops.entrySet()){
+    String role=row.getKey();
+    if(!sheetOriginals.containsKey(role))throw new IOException("Crop has no retained original: "+role);
+    if(role.equals("source")&&needsOriginal(selected))
+     request.put("source_original",sheetOriginals.get(role));
+    else if(ProductionService.HULL.equals(selected)&&references.containsKey(role))
+     request.put(role+"_original",sheetOriginals.get(role));
+    else continue;
+    provenance.put(role,new JSONObject(row.getValue()));
+   }
+   if(provenance.length()>0)request.put("crop_provenance",provenance);
    if (ProductionService.HULL.equals(selected)) {
     for (Map.Entry<String,String> reference : references.entrySet()) {
      request.put(reference.getKey(), reference.getValue());
@@ -1283,6 +1359,8 @@ void showTechnicalReport(File file){
   state.putString("pendingMapPart",pendingMapPart);
   state.putString("pendingMapChannel",pendingMapChannel);
   for (Map.Entry<String,String> entry : references.entrySet()) state.putString(entry.getKey(),entry.getValue());
+  for(Map.Entry<String,String> row:sheetOriginals.entrySet())state.putString("sheet_original_"+row.getKey(),row.getValue());
+  for(Map.Entry<String,String> row:sheetCrops.entrySet())state.putString("sheet_crop_"+row.getKey(),row.getValue());
  }
 
  @Override protected void onActivityResult(int code,int result,Intent data) {
@@ -1395,11 +1473,11 @@ void showTechnicalReport(File file){
               .setPositiveButton("OK",null).show();
       return;
      }
-     String role = code == 1 ? "source" : new String[]{"front","right","back"}[code-11];
-     if (code == 1) source = original.getAbsolutePath();
-     else references.put(role,original.getAbsolutePath());
-     Button control = (Button) body.findViewWithTag(role);
-     if (control != null) control.setText(code == 1 ? originalLabel() : viewLabel(role));
+     String role=code==1?"source":new String[]{"front","right","back"}[code-11];
+     boolean imageSource=code!=1||(kind!=null
+        &&!("OBJ geometry".equals(kind.getSelectedItem())||originalGlbMode((String)kind.getSelectedItem())));
+     if(imageSource)chooseReferenceRegion(role,original);
+     else commitSelectedImage(role,original,original,null);
     });
    } catch (Exception failure) {
     runOnUiThread(() -> error(failure));
