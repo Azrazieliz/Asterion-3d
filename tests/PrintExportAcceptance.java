@@ -16,6 +16,7 @@ public final class PrintExportAcceptance {
             rejectsOpen();
             rejectsInverted();
             rejectsNonManifold();
+            rejectsDetachedUnlessExplicit();
             rejectsInvalidSettings();
             acceptsMeshLargerThanOldTopologyAudit();
             System.out.println("PASS strict STL: mm/Z-up, normals, topology orientation, non-manifold/open/inward rejections, parent immutability and >180k vertex mesh");
@@ -103,6 +104,18 @@ public final class PrintExportAcceptance {
         if(result.nonManifoldEdges()<3||result.technicallyClosed())
             throw new AssertionError("Triply shared edges incorrectly accepted");
     }
+    private static void rejectsDetachedUnlessExplicit()throws Exception {
+        Mesh separate=new Mesh();
+        float[] c={1,1,1};
+        separate.box(-1,0,0,1,1,1,c,0);
+        separate.box( 1,0,0,1,1,1,c,0);
+        PrintExport.Audit single=PrintExport.inspect(separate,new PrintExport.Options(100),()->{});
+        if(single.disconnectedShells()!=2||single.technicallyClosed())
+            throw new AssertionError("Detached geometry incorrectly accepted as one print");
+        PrintExport.Audit pieces=PrintExport.inspect(separate,new PrintExport.Options(100,true),()->{});
+        if(!pieces.technicallyClosed()||!pieces.multiShellMode())
+            throw new AssertionError("Explicit valid separate closed parts could not be printed");
+    }
     private static void rejectsInvalidSettings() {
         for(double value:new double[]{0,4,601,Double.NaN,Double.POSITIVE_INFINITY}){
             try{new PrintExport.Options(value);throw new AssertionError("Invalid height accepted");}
@@ -118,13 +131,13 @@ public final class PrintExportAcceptance {
             mesh.box(x,0,z,.02f,height,.02f,colour,0);
         }
         if(mesh.vertices.size()<=180000)throw new AssertionError("Stress case below old limit");
-        PrintExport.Audit quality=PrintExport.inspect(mesh,new PrintExport.Options(140),()->{});
+        PrintExport.Audit quality=PrintExport.inspect(mesh,new PrintExport.Options(140,true),()->{});
         if(!quality.technicallyClosed()||quality.triangles()!=63000)
             throw new AssertionError("Large object print audit failed: "+quality);
         File exportedFile=new File("test-output/print_large.stl");
         Files.createDirectories(exportedFile.toPath().getParent());
         try(java.io.OutputStream output=Files.newOutputStream(exportedFile.toPath())){
-            PrintExport.writeStrict(mesh,new PrintExport.Options(140),output,()->{});
+            PrintExport.writeStrict(mesh,new PrintExport.Options(140,true),output,()->{});
         }
         if(exportedFile.length()!=84+63000L*50)
             throw new AssertionError("Large mesh STL length incorrect");
