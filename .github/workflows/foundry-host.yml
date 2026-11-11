@@ -42,6 +42,15 @@ jobs:
         with:
           gradle-version: "8.10.2"
       - name: Install target Android SDK
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.1"
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        run: |
+          SDKMGR="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -x "$SDKMGR"
+          "$SDKMGR" --sdk_root="$ANDROID_HOME" --install "platforms;android-35" "build-tools;35.0.1"
       - name: Compile Android source with pinned offline dependencies
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: gradle :app:compileDebugJavaWithJavac --no-daemon --stacktrace
