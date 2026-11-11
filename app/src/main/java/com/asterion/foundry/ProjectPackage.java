@@ -65,6 +65,12 @@ final class ProjectPackage {
                 PartMaterials.load(materialFile, Mesh.load(editable));
                 add(zip, PartMaterials.FILE, materialFile);
             }
+            if (receipt.has("part_texture_manifest_sha256")) {
+                PartTextureMaps maps = PartTextureMaps.load(directory, Mesh.load(editable),
+                        receipt.getString("part_texture_manifest_sha256"));
+                for (Map.Entry<String,File> entry : maps.outputs(directory).entrySet())
+                    add(zip,entry.getKey(),entry.getValue());
+            }
             if (receipt.has("motion")) {
                 File script = new File(directory,"motion.foundry.txt");
                 if (!receipt.getJSONObject("motion").getString("editable_script_sha256").equals(FilesUtil.hash(script))) {
@@ -86,6 +92,8 @@ final class ProjectPackage {
         SkeletalMotion motion=receipt.has("motion")?SkeletalMotion.parse(mesh,FilesUtil.readString(new File(directory,"motion.foundry.txt").toPath())):null;
         PartMaterials finishes=PartMaterials.load(receipt.has("part_materials_sha256")
                 ? new File(directory,PartMaterials.FILE) : null, mesh);
+        PartTextureMaps maps=PartTextureMaps.load(directory,mesh,
+                receipt.optString("part_texture_manifest_sha256"));
         JSONArray entries=new JSONArray();
         File temporary=File.createTempFile("part-export-",".glb",new File(root,"cache"));
         try{
@@ -93,7 +101,7 @@ final class ProjectPackage {
             for(int i=0;i<parts.size();i++){
                 Mesh.Part part=parts.get(i);
                 String path="parts/part-"+(i+1)+".glb";
-                Glb.write(mesh.extractPart(i),temporary,texture,motion,finishes.only(part.id()));
+                Glb.write(mesh.extractPart(i),temporary,texture,motion,finishes.only(part.id()),maps.only(part.id()));
                 entries.put(new JSONObject().put("id",part.id()).put("name",part.name()).put("role",part.role())
                         .put("file",path).put("sha256",FilesUtil.hash(temporary)));
                 add(zip,path,temporary);
