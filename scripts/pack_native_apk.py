@@ -1,9 +1,11 @@
 """Add direct-build Android code and native libs, or verify the bundled contents."""
 import hashlib
+import shutil
+import tempfile
 from pathlib import Path
 import sys
 import zipfile
-from prepare_native import FILES, MODEL, POSE_MODEL, EMBEDDED_PACK, RECONSTRUCTION_FILES
+from prepare_native import FILES, MODEL, POSE_MODEL, EMBEDDED_PACK, RECONSTRUCTION_FILES, verify_reconstruction_archive
 
 if sys.argv[1] == "--verify":
     with zipfile.ZipFile(sys.argv[2]) as apk:
@@ -12,6 +14,13 @@ if sys.argv[1] == "--verify":
         expected_weight_bytes = sum(meta[0] for meta in RECONSTRUCTION_FILES.values())
         assert model_archive.compress_type == zipfile.ZIP_STORED, "Bundled reconstruction model ZIP must remain uncompressed"
         assert expected_weight_bytes <= model_archive.file_size <= expected_weight_bytes + 16384, "Bundled reconstruction weight pack is missing or truncated"
+        # Validate the *final signed APK contents*, not only the build-machine
+        # input files. Spool to disk, never materialize ~700 MiB in RAM.
+        with tempfile.TemporaryFile() as scratch:
+            with apk.open(model_archive) as embedded:
+                shutil.copyfileobj(embedded, scratch, length=1024 * 1024)
+            scratch.seek(0)
+            verify_reconstruction_archive(scratch)
         for name in (MODEL, POSE_MODEL):
             model = apk.getinfo("assets/" + name)
             assert model.compress_type == zipfile.ZIP_STORED, "Model needs a mappable APK entry"

@@ -244,3 +244,8 @@ Starting from the previous M1 checkpoint, the branch now includes:
 ## 2026-11-11 — Streamed larger self-contained GLB originals (source only)
 
 Original GLB import and the registered original-GLB partner picker now preserve input streams up to **1 GiB** without reading the whole binary into memory. Other source categories retain the 64 MiB limit, protecting image decoders, reference bundles and incidental imports. Source preservation uses content hashes and fails before overwriting originals; every import additionally retains at least 256 MiB free app storage, including during streaming. This is a bounded intake change, **not** proof that a 1 GiB model edits interactively or imports into Unreal. Android source compilation and actual phone imports remain separate acceptance checks.
+
+
+## 2026-11-11 — Signed APK nested-model verification (source only)
+
+The final `scripts/pack_native_apk.py --verify` path now streams the signed package's embedded reconstruction archive to disk and verifies all **six** contained model weights using the pinned model catalog; it no longer accepts a merely size-matched opaque archive as sufficient proof. Model validation operates in bounded RAM. A real new signed APK and phone runtime test have not been performed by this chat.
