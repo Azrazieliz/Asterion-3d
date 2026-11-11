@@ -1312,6 +1312,33 @@ void showTechnicalReport(File file){
      }
      return;
     }
+    if (code == 26) {
+     String project=printExportId;
+     if(project==null)throw new IOException("3D printing source was not selected");
+     PrintExport.Options options=new PrintExport.Options(printHeightMm);
+     if(!"complete".equals(store.job(project).getString("state")))
+      throw new IOException("Print project is no longer completed");
+     File folder=store.project(project);
+     File meshFile=new File(folder,"checkpoint.mesh");
+     JSONObject receipt=new JSONObject(FilesUtil.readString(new File(folder,"receipt.json").toPath()));
+     if(!receipt.getString("editable_mesh_sha256").equals(FilesUtil.hash(meshFile)))
+      throw new IOException("Saved geometry changed after print preview");
+     Mesh mesh=Mesh.load(meshFile);
+     // Refuse any unsafe geometry before opening a SAF destination for writing.
+     PrintExport.Audit audit=PrintExport.inspect(mesh,options,()->{});
+     audit.requireGeometryGate();
+     try(OutputStream output=getContentResolver().openOutputStream(uri)){
+      if(output==null)throw new IOException("Document provider returned no print destination");
+      PrintExport.writeStrict(mesh,options,output,()->{});
+     }
+     runOnUiThread(()->new AlertDialog.Builder(this)
+       .setTitle("STL geometry saved")
+       .setMessage(audit.summary()+"\n\nSlicer review, supports, wall thickness, "
+         +"colour and physical print quality are not yet validated. "
+         +"The original NoWorld project and editable files are unchanged.")
+       .setPositiveButton("Close",null).show());
+     return;
+    }
     if (code == 2) {
      try (OutputStream output = getContentResolver().openOutputStream(uri)) {
       if (output == null) throw new IOException("Cannot open the selected destination");
