@@ -2,6 +2,8 @@ package com.asterion.foundry;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapRegionDecoder;
+import android.graphics.Rect;
 import java.io.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -76,6 +78,77 @@ final class SourceFiles {
             result.put(role, file);
         }
         return result;
+    }
+
+    /** Private, byte-preserving original + independently SHA-addressed crop. */
+    record CroppedSource(File derived, File original, ReferenceCrop.Box region,
+                         int originalWidth, int originalHeight, int outputWidth,
+                         int outputHeight) {
+        JSONObject evidence() throws Exception {
+            return new JSONObject().put("schema", ReferenceCrop.VERSION)
+                    .put("original_sha256", original.getName())
+                    .put("crop_sha256", derived.getName())
+                    .put("source_width", originalWidth)
+                    .put("source_height", originalHeight)
+                    .put("left", region.left()).put("top", region.top())
+                    .put("right", region.right()).put("bottom", region.bottom())
+                    .put("output_width", outputWidth).put("output_height", outputHeight)
+                    .put("original_unchanged",true)
+                    .put("reference_view_alignment","must_be_reviewed");
+        }
+    }
+
+    CroppedSource cropPreserved(File original,ReferenceCrop.Box region) throws Exception {
+        if(original==null)throw new IOException("No preserved source image for cropping");
+        File checked=original.getCanonicalFile();
+        if(!checked.isFile()||!checked.getParentFile().equals(root.getCanonicalFile())
+                ||!checked.getName().matches("[0-9a-f]{64}")
+                ||!FilesUtil.hash(checked).equals(checked.getName()))
+            throw new IOException("Selected image is not an intact preserved original");
+        BitmapFactory.Options meta=new BitmapFactory.Options();
+        meta.inJustDecodeBounds=true;
+        BitmapFactory.decodeFile(checked.getAbsolutePath(),meta);
+        region.requireInside(meta.outWidth,meta.outHeight);
+        if(region.isFull(meta.outWidth,meta.outHeight))
+            return new CroppedSource(checked,checked,region,
+                    meta.outWidth,meta.outHeight,meta.outWidth,meta.outHeight);
+        File png=File.createTempFile("crop-", ".png.incoming", root);
+        BitmapRegionDecoder decoder=null;
+        Bitmap bitmap=null;
+        try {
+            decoder=BitmapRegionDecoder.newInstance(checked.getAbsolutePath(),false);
+            int sample=1;
+            while(Math.max(region.width(),region.height())/sample>ReferenceCrop.MAX_MODEL_SOURCE)
+                sample*=2;
+            BitmapFactory.Options options=new BitmapFactory.Options();
+            options.inSampleSize=sample;
+            options.inPreferredConfig=Bitmap.Config.ARGB_8888;
+            bitmap=decoder.decodeRegion(
+                    new Rect(region.left(),region.top(),region.right(),region.bottom()),options);
+            if(bitmap==null)throw new IOException("Crop image could not be decoded");
+            int width=bitmap.getWidth(),height=bitmap.getHeight();
+            if(width<ReferenceCrop.MIN_PIXELS||height<ReferenceCrop.MIN_PIXELS)
+                throw new IOException("Selected crop has too few pixels for reconstruction");
+            try(FileOutputStream output=new FileOutputStream(png)){
+                if(!bitmap.compress(Bitmap.CompressFormat.PNG,100,output))
+                    throw new IOException("PNG encoding failed for selected subject");
+                output.getFD().sync();
+            }
+            if(png.length()>DEFAULT_IMPORT_BYTES)
+                throw new IOException("Crop exceeds the source image storage limit");
+            File derived;
+            try(InputStream input=new FileInputStream(png)){
+                derived=preserve(input,DEFAULT_IMPORT_BYTES);
+            }
+            if(!FilesUtil.hash(checked).equals(checked.getName()))
+                throw new IOException("Original image changed while creating a crop");
+            return new CroppedSource(derived,checked,region,
+                    meta.outWidth,meta.outHeight,width,height);
+        }finally{
+            if(bitmap!=null)bitmap.recycle();
+            if(decoder!=null)decoder.recycle();
+            png.delete();
+        }
     }
 
     record Raster(int[] pixels, int width, int height) {}
