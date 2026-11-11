@@ -23,7 +23,7 @@ final class StageManifest {
     private static final Set<String> ALLOWED_FILES = Set.of(
             "checkpoint.mesh", "reference-metrics.json", "base-color.png",
             "asset.glb", "receipt.json", "import-manifest.json",
-            "motion.foundry.txt", "part-materials.foundry");
+            "motion.foundry.txt", "part-materials.foundry", "part-textures.foundry");
     private final File directory;
     private final File manifest;
     private JSONObject stages;
@@ -45,9 +45,14 @@ final class StageManifest {
     }
 
     private File output(String filename) throws Exception {
-        if (!ALLOWED_FILES.contains(filename)) throw new IOException("Unexpected stage output " + filename);
+        if (!ALLOWED_FILES.contains(filename)
+                && !filename.matches("part-textures/[a-z][a-z0-9_-]{0,63}-(base_color|normal|metallic_roughness|emissive)\\.png"))
+            throw new IOException("Unexpected stage output " + filename);
         File file = new File(directory, filename).getCanonicalFile();
-        if (!file.getParentFile().equals(directory) || !file.isFile())
+        boolean projectLevel=file.getParentFile().equals(directory);
+        boolean mapsLevel=filename.startsWith("part-textures/")
+                && file.getParentFile().equals(new File(directory,"part-textures").getCanonicalFile());
+        if ((!projectLevel&&!mapsLevel) || !file.isFile())
             throw new IOException("Missing or unsafe stage output " + filename);
         return file;
     }

@@ -36,6 +36,7 @@ final class PartTextureMaps {
     static PartTextureMaps empty() { return new PartTextureMaps(Map.of()); }
     boolean isEmpty() { return maps.isEmpty(); }
     int size() { return maps.size(); }
+    Set<String> keys() { return new java.util.TreeSet<>(maps.keySet()); }
 
     static String filename(String id,String channel) {
         requireId(id);
