@@ -26,12 +26,27 @@ foreach($fixture in @('CoreAcceptance','com.asterion.foundry.FormAcceptance','Mo
     & "$Java\bin\java.exe" -cp "$build\host" $fixture
     if($LASTEXITCODE -ne 0){throw "Acceptance failed: $fixture"}
 }
+$jsonRoot=Join-Path $env:USERPROFILE '.gradle\caches\modules-2\files-2.1\org.json\json'
+$jsonJar=$env:FOUNDRY_JSON_JAR
+if([string]::IsNullOrWhiteSpace($jsonJar) -and (Test-Path $jsonRoot)){
+    $jsonJar=Get-ChildItem $jsonRoot -Recurse -Filter 'json-*.jar' -File -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+}
+if(-not [string]::IsNullOrWhiteSpace($jsonJar) -and (Test-Path $jsonJar)){
+    Write-Output "STAGE_TEST_JSON_JAR=$jsonJar"
+    $stageSources=@('StageManifest','SurfaceAudit') | ForEach-Object {"$src\java\com\asterion\foundry\$_.java"}
+    & "$Java\bin\javac.exe" -encoding UTF-8 --release 17 -cp "$build\host;$jsonJar" -d "$build\host" @stageSources "$root\tests\StagePipelineAcceptance.java"
+    if($LASTEXITCODE -ne 0){throw 'Staged production regression compilation failed'}
+    & "$Java\bin\java.exe" -cp "$build\host;$jsonJar" com.asterion.foundry.StagePipelineAcceptance
+    if($LASTEXITCODE -ne 0){throw 'Staged production regression failed'}
+}else{
+    Write-Warning 'Stage regression skipped because host org.json JAR was not found'
+}
 & 'D:\Tools\Python311\python.exe' "$root\scripts\validate_glb.py" @(Get-ChildItem "$root\test-output" -Filter '*.glb' | ForEach-Object {$_.FullName})
 if($LASTEXITCODE -ne 0){throw 'GLB validation failed'}
 Pop-Location
 & "$tools\aapt2.exe" compile --dir "$src\res" -o "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'Resources failed'}
-& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 4 --version-name '0.4.0-production-evaluation' -0 tflite -A "$native\assets" "$build\res.zip"
+& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 5 --version-name '0.5.0-staged-evaluation' -0 tflite -A "$native\assets" "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'AAPT failed'}
 & "$Java\bin\jar.exe" --create --file "$build\classes.jar" -C "$build\classes" .
 if($LASTEXITCODE -ne 0){throw 'Class archive failed'}
@@ -41,7 +56,7 @@ if($LASTEXITCODE -ne 0){throw 'D8 failed'}
 if($LASTEXITCODE -ne 0){throw 'DEX insertion failed'}
 & "$tools\zipalign.exe" -f -P 16 4 "$build\unsigned.apk" "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Alignment failed'}
-$apk="$root\dist\AsterionFoundry-v0.4.0-EVALUATION.apk"
+$apk="$root\dist\AsterionFoundry-v0.5.0-STAGED-EVALUATION.apk"
 & "$tools\apksigner.bat" sign --ks "$env:USERPROFILE\.android\debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out $apk "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Signature failed'}
 & "$tools\apksigner.bat" verify --verbose $apk
