@@ -8,8 +8,8 @@ import java.util.Set;
 
 /** Carves each named part against a shared orthographic frame rather than centering individual masks. */
 final class PartHull {
-    static final String METHOD = "calibrated-part-hull-v1";
-    static final int MAX_PARTS = 8;
+    static final String METHOD = "calibrated-part-hull-v2";
+    static final int MAX_PARTS = 32;
     private static final int CELL = 512;
     private static final double MIN_OVERLAP = .65;
 
@@ -32,8 +32,10 @@ final class PartHull {
             if(!ids.add(part.id)||!names.add(part.name))throw new IllegalArgumentException("Duplicate reference part identity or name");
         }
         int columns=parts.size()>4?4:parts.size()>1?2:1;
-        int rows=parts.size()>columns?2:1;
+        int rows=(parts.size()+columns-1)/columns;
         int width=columns*CELL,height=rows*CELL;
+        if((long)width*height>8_388_608L)
+            throw new IllegalArgumentException("Combined part texture atlas exceeds the mobile memory budget");
         int[] atlas=new int[width*height];
         Arrays.fill(atlas,0xffffffff);
         Mesh output=new Mesh();

@@ -29,7 +29,7 @@ final class PartReferenceBundle {
             JSONObject manifest=new JSONObject(new String(bytes(archive,MANIFEST,MANIFEST_LIMIT),StandardCharsets.UTF_8));
             if(!SCHEMA.equals(manifest.getString("schema")))throw new IOException("Unsupported part reference schema");
             JSONArray descriptions=manifest.getJSONArray("parts");
-            if(descriptions.length()<1||descriptions.length()>PartHull.MAX_PARTS)throw new IOException("Use one to eight parts");
+            if(descriptions.length()<1||descriptions.length()>PartHull.MAX_PARTS)throw new IOException("Use one to "+PartHull.MAX_PARTS+" labelled reference parts");
             List<PartHull.Part> parts=new ArrayList<>();
             Set<String> allowed=new HashSet<>(Set.of(MANIFEST,"parts/"));
             for(int i=0;i<descriptions.length();i++){
