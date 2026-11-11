@@ -160,7 +160,7 @@ final class PartTextureMaps {
         if(!manifest.isFile()||!expectedSha.equals(FilesUtil.hash(manifest)))
             throw new IOException("Part texture manifest checksum mismatch");
         String[] lines=FilesUtil.readString(manifest.toPath()).split("\n",-1);
-        if(lines.length<3||!VERSION.equals(lines[0])||lines.length>258)
+        if(lines.length<3||!VERSION.equals(lines[0])||lines.length>Mesh.MAX_PARTS*CHANNELS.length+2)
             throw new IOException("Part texture manifest schema or count invalid");
         TreeMap<String,byte[]> restored=new TreeMap<>();
         long total=0;

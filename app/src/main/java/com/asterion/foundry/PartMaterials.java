@@ -81,7 +81,7 @@ final class PartMaterials {
         String[] lines = FilesUtil.readString(file.toPath()).split("\n", -1);
         if (lines.length == 0 || !VERSION.equals(lines[0]))
             throw new IOException("Unsupported PBR layer schema");
-        if (lines.length > 66) throw new IOException("PBR layer exceeds the part limit");
+        if (lines.length > Mesh.MAX_PARTS+2) throw new IOException("PBR layer exceeds the part limit");
         TreeMap<String, Finish> parsed = new TreeMap<>();
         for (int i = 1; i < lines.length; i++) {
             String line = lines[i];

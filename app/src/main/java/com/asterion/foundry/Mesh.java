@@ -6,7 +6,7 @@ public final class Mesh {
  public final ArrayList<float[]> vertices=new ArrayList<>();
  public final ArrayList<Bone> bones=new ArrayList<>();
  private final ArrayList<Part> parts=new ArrayList<>();
- public static final int STRIDE=13, LIMIT=1500000;
+ public static final int STRIDE=13, LIMIT=1500000, MAX_PARTS=256;
  private static final int WEIGHTED_STRIDE=20, LEGACY_MAGIC=0x41463344, WEIGHTED_MAGIC=0x41463345;
  static final int INFLUENCES=4;
  private static final int PART_MAGIC=0x41463346, PART_ID_MAGIC=0x41463347;
@@ -17,7 +17,7 @@ public final class Mesh {
   beginPart(defaultPartId(parts.size()),name,role);
  }
  void beginPart(String id,String name,String role){
-  if(!validPart(id,name,role)||parts.size()>=64
+  if(!validPart(id,name,role)||parts.size()>=MAX_PARTS
           ||parts.stream().anyMatch(p->p.id().equals(id)||p.name().equals(name))){
    throw new IllegalArgumentException("Invalid or duplicate mesh part");
   }
@@ -130,7 +130,7 @@ public final class Mesh {
    n=in.readInt();if(n<0||n>LIMIT||n*(long)stride*4>f.length())throw new IOException("Invalid vertex count");
    for(int i=0;i<n;i++){float[] v=new float[stride];for(int j=0;j<stride;j++)v[j]=in.readFloat();m.vertices.add(v);}
    if(magic==PART_MAGIC||magic==PART_ID_MAGIC){
-    int count=in.readInt();if(count<1||count>64)throw new IOException("Invalid mesh part count");
+    int count=in.readInt();if(count<1||count>MAX_PARTS)throw new IOException("Invalid mesh part count");
     Set<String> names=new HashSet<>(),ids=new HashSet<>();int previous=-1;
     for(int i=0;i<count;i++){
      String id=magic==PART_ID_MAGIC?in.readUTF():defaultPartId(i);
