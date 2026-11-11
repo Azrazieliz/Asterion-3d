@@ -3,7 +3,6 @@ package com.asterion.foundry;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import org.json.JSONObject;
@@ -89,14 +88,22 @@ final class StageManifest {
                 .put("evidence", "checksum_verified");
         JSONObject previous = stages.optJSONObject(name);
         if (previous != null
-                && previous.getJSONObject("inputs").similar(wanted.getJSONObject("inputs"))
-                && previous.getJSONObject("files").similar(hashedFiles)) {
+                && same(previous.getJSONObject("inputs"), wanted.getJSONObject("inputs"))
+                && same(previous.getJSONObject("files"), hashedFiles)) {
             verify(name);
             return false;
         }
         for (int i = index; i < ORDER.length; i++) stages.remove(ORDER[i]);
         stages.put(name, wanted);
         save();
+        return true;
+    }
+
+    private static boolean same(JSONObject left, JSONObject right) throws Exception {
+        if (left.length() != right.length()) return false;
+        for (String key : left.keySet()) {
+            if (!right.has(key) || !left.getString(key).equals(right.getString(key))) return false;
+        }
         return true;
     }
 
