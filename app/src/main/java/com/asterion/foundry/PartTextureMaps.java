@@ -30,8 +30,9 @@ final class PartTextureMaps {
     private final TreeMap<String,byte[]> maps;
 
     private PartTextureMaps(Map<String,byte[]> source) {
-        maps = new TreeMap<>();
-        for (var row : source.entrySet()) maps.put(row.getKey(),row.getValue().clone());
+        // Values are immutable ownership copies on insertion and cloned on public read.
+        // Share them across child revisions; never copy hundreds of MB of unchanged maps.
+        maps = new TreeMap<>(source);
     }
     static PartTextureMaps empty() { return new PartTextureMaps(Map.of()); }
     boolean isEmpty() { return maps.isEmpty(); }

@@ -79,14 +79,13 @@ public final class PrintExport {
                 throw new IOException("3D printing output exceeds supported coordinate range");
         }
         long quantizedPoint(double[] xyz,int offset) throws IOException {
-            long[] q=new long[3];
-            for(int axis=0;axis<3;axis++){
-                // Offset to positive 21-bit bins: 0.01 mm exact weld precision.
-                q[axis]=Math.round((xyz[offset+axis]+10000.)/QUANTIZATION_MM);
-                if(q[axis]<0||q[axis]>MAX_COORD_BIN)
-                    throw new IOException("Print coordinate outside 21-bit welding bounds");
-            }
-            return (q[0]<<42)|(q[1]<<21)|q[2];
+            // No temporary per-vertex arrays: large anatomy meshes may have 1.5m vertices.
+            long x=Math.round((xyz[offset]+10000.)/QUANTIZATION_MM);
+            long y=Math.round((xyz[offset+1]+10000.)/QUANTIZATION_MM);
+            long z=Math.round((xyz[offset+2]+10000.)/QUANTIZATION_MM);
+            if(x<0||y<0||z<0||x>MAX_COORD_BIN||y>MAX_COORD_BIN||z>MAX_COORD_BIN)
+                throw new IOException("Print coordinate outside 21-bit welding bounds");
+            return (x<<42)|(y<<21)|z;
         }
     }
 
