@@ -16,8 +16,9 @@ java -cp test-output/classes com.asterion.foundry.PartHullAcceptance
 python3 scripts/validate_glb.py test-output/*.glb
 if [[ -n "${FOUNDRY_JSON_JAR:-}" ]]; then
   javac -cp "test-output/classes:$FOUNDRY_JSON_JAR" -d test-output/classes \
-    app/src/main/java/com/asterion/foundry/{OriginalGlb,NoWorldHandoff,OriginalMaterialVariant}.java \
-    tests/{NoWorldHandoffAcceptance,OriginalMaterialVariantAcceptance}.java
+    app/src/main/java/com/asterion/foundry/{OriginalGlb,NoWorldHandoff,OriginalMaterialVariant,StageManifest,SurfaceAudit}.java \
+    tests/{NoWorldHandoffAcceptance,OriginalMaterialVariantAcceptance,StagePipelineAcceptance}.java
   java -cp "test-output/classes:$FOUNDRY_JSON_JAR" com.asterion.foundry.NoWorldHandoffAcceptance
   java -cp "test-output/classes:$FOUNDRY_JSON_JAR" com.asterion.foundry.OriginalMaterialVariantAcceptance
+  java -cp "test-output/classes:$FOUNDRY_JSON_JAR" com.asterion.foundry.StagePipelineAcceptance
 fi
