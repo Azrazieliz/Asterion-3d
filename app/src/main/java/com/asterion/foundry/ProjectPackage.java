@@ -41,9 +41,15 @@ final class ProjectPackage {
             if (receipt.has("editable_mesh_sha256") || !receipt.optBoolean("source_bytes_preserved") && editable.isFile()) {
                 add(zip, "checkpoint.mesh", editable);
             }
+            File stageEvidence = new File(directory, "stage-manifest.json");
+            if (stageEvidence.isFile()) {
+                StageManifest manifest = new StageManifest(directory);
+                manifest.verifyAll();
+            }
             for (String name : new String[]{"asset.glb", "receipt.json", "import-manifest.json"}) {
                 add(zip, name, new File(directory, name));
             }
+            if (stageEvidence.isFile()) add(zip, "stage-manifest.json", stageEvidence);
             if (receipt.has("texture_sha256")) {
                 File texture = new File(directory, "base-color.png");
                 if (!receipt.getString("texture_sha256").equals(FilesUtil.hash(texture))) {
