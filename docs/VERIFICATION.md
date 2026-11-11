@@ -249,3 +249,8 @@ Original GLB import and the registered original-GLB partner picker now preserve 
 ## 2026-11-11 — Signed APK nested-model verification (source only)
 
 The final `scripts/pack_native_apk.py --verify` path now streams the signed package's embedded reconstruction archive to disk and verifies all **six** contained model weights using the pinned model catalog; it no longer accepts a merely size-matched opaque archive as sufficient proof. Model validation operates in bounded RAM. A real new signed APK and phone runtime test have not been performed by this chat.
+
+
+## 2026-11-11 — Exact-source PBR material factor revisions (source only)
+
+Original source GLBs can now be edited by selecting a **uniquely named material**, choosing metallic and roughness, and creating a new derivative GLB. Only the corresponding glTF numeric PBR factors change; the original buffer bytes, source material textures, rig, morph targets, animation and remaining JSON tokens are retained. Existing tint operations and saved requests keep their original behavior. Factor-range and animated-material restrictions reject unsafe revisions. Acceptance tests cover exact binary preservation and invalid factors. Source CI is separate from actual signed-phone testing and lighting/visual acceptance.

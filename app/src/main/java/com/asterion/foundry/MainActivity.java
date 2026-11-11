@@ -663,9 +663,46 @@ void showTechnicalReport(File file){
     List<String> names = OriginalMaterialVariant.editableNames(new File(sourcePath));
     if (names.isEmpty()) throw new IOException("No uniquely named editable materials were found in this GLB");
     runOnUiThread(() -> new AlertDialog.Builder(this).setTitle("Choose a source material")
-            .setItems(names.toArray(new String[0]),(dialog,item) -> tintDialog(sourcePath,names.get(item))).show());
+            .setItems(names.toArray(new String[0]),(dialog,item) ->
+                new AlertDialog.Builder(this).setTitle(names.get(item))
+                    .setItems(new String[]{"Tint original colour","Edit metallic and roughness"},
+                        (choice,option)->{
+                            if(option==0)tintDialog(sourcePath,names.get(item));
+                            else originalPbrDialog(sourcePath,names.get(item));
+                        }).show()).show());
    } catch (Exception failure) { runOnUiThread(() -> error(failure)); }
   }).start();
+ }
+
+ private void originalPbrDialog(String sourcePath,String material) {
+  try{
+   OriginalMaterialVariant.FactorResult current=
+       OriginalMaterialVariant.factors(new File(sourcePath),material);
+   LinearLayout fields=new LinearLayout(this);
+   fields.setPadding(dp(20),0,dp(20),0);
+   fields.setOrientation(1);
+   fields.addView(text("Adjusts the selected original GLB material without rewriting geometry, original textures, morphs, animation or skin. A separate revision is created.",14,INK));
+   EditText metallic=formField(fields,"Metallic (0.0–1.0)",Double.toString(current.metallic()));
+   EditText roughness=formField(fields,"Roughness (0.0–1.0)",Double.toString(current.roughness()));
+   AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Original PBR finish")
+      .setView(fields).setNegativeButton("Cancel",null)
+      .setPositiveButton("Create revision",null).create();
+   dialog.setOnShowListener(ignored->
+     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+      try{
+       double metal=Double.parseDouble(metallic.getText().toString().trim());
+       double rough=Double.parseDouble(roughness.getText().toString().trim());
+       new PartMaterials.Finish(metal,rough);
+       enqueue(new JSONObject().put("kind",ProductionService.MATERIAL_VARIANT)
+         .put("material_mode","pbr_factors").put("source",sourcePath)
+         .put("material_name",material)
+         .put("metallic",metal).put("roughness",rough)
+         .put("description",material+" · original PBR revision"));
+       dialog.dismiss();
+      }catch(Exception error){error(error);}
+     }));
+   dialog.show();
+  }catch(Exception error){error(error);}
  }
 
  private void tintDialog(String sourcePath, String material) {

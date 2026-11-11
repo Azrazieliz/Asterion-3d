@@ -550,6 +550,12 @@ public final class ProductionService extends Service {
             throws Exception {
         String id = job.getString("id");
         if (source == null) throw new IOException("Material variant requires an original self-contained GLB");
+        String mode=request.optString("material_mode","tint");
+        if ("pbr_factors".equals(mode)) {
+            materialPbrVariant(job,request,directory,source,start);
+            return;
+        }
+        if (!"tint".equals(mode)) throw new IOException("Unsupported original material editing mode");
         String material = request.getString("material_name");
         int tint = request.getInt("tint");
         if (tint < 0 || tint > 0xffffff) throw new IOException("Invalid material tint");
@@ -571,6 +577,42 @@ public final class ProductionService extends Service {
         FilesUtil.write(new File(directory,"import-manifest.json"),new JSONObject()
                 .put("schema","asterion.foundry.intermediate.v1").put("asset","asset.glb").put("sha256",assetSha)
                 .put("source_sha256",source.getName()).put("native_acceptance",false).toString(2));
+        store.finish(id,MATERIAL_VARIANT,SystemClock.elapsedRealtime()-start,false,receipt);
+    }
+
+    private void materialPbrVariant(JSONObject job, JSONObject request, File directory, File source, long start)
+            throws Exception {
+        String id=job.getString("id");
+        String material=request.getString("material_name");
+        double metallic=request.getDouble("metallic"),roughness=request.getDouble("roughness");
+        stage(id,job.getInt("stage"),"Applying non-destructive original material PBR factors");
+        File asset=new File(directory,"asset.glb");
+        OriginalMaterialVariant.FactorResult result=OriginalMaterialVariant.writePbrFactors(
+                source,asset,material,metallic,roughness);
+        FilesUtil.write(new File(directory,"project.json"),request.toString(2));
+        stage(id,3,"Writing source-preserving PBR receipt");
+        String assetSha=FilesUtil.hash(asset);
+        JSONObject receipt=new JSONObject()
+                .put("schema","asterion.foundry.receipt.v1")
+                .put("job",id).put("recipe",MATERIAL_VARIANT)
+                .put("material_mode","pbr_factors")
+                .put("outcome","complete")
+                .put("source_sha256",source.getName()).put("asset_sha256",assetSha)
+                .put("source_bytes_preserved",false)
+                .put("binary_payload_preserved",true)
+                .put("rig_animation_morph_and_material_images_preserved",true)
+                .put("material_name",result.materialName())
+                .put("material_index",result.materialIndex())
+                .put("metallic_factor",result.metallic())
+                .put("roughness_factor",result.roughness())
+                .put("visual_quality","UNVALIDATED")
+                .put("unreal_import_executed",false);
+        FilesUtil.write(new File(directory,"receipt.json"),receipt.toString(2));
+        FilesUtil.write(new File(directory,"import-manifest.json"),new JSONObject()
+                .put("schema","asterion.foundry.intermediate.v1")
+                .put("asset","asset.glb").put("sha256",assetSha)
+                .put("source_sha256",source.getName())
+                .put("native_acceptance",false).toString(2));
         store.finish(id,MATERIAL_VARIANT,SystemClock.elapsedRealtime()-start,false,receipt);
     }
 
