@@ -513,6 +513,11 @@ void create(){
     motionPlaybackButton = button("Play animation", () -> motionPlaybackButton.setText(
             preview.toggleMotion() ? "Pause animation" : "Play animation"));
    }
+   File qualityEvidenceFile=new File(directory,"receipt.json");
+   if(qualityEvidenceFile.isFile()){
+    JSONObject qualityEvidence=new JSONObject(FilesUtil.readString(qualityEvidenceFile.toPath()));
+    renderQualitySummary(qualityEvidence);
+   }
    if(complete)button("Export editable package",()->export(id));
    if(complete&&receipt.has("part_texture_manifest_sha256"))
     button("Inspect saved PBR texture maps",()->inspectPartTextures(id,mesh,receipt));
@@ -572,6 +577,53 @@ void create(){
    if (receiptFile.isFile())button("Technical validation details",()->showTechnicalReport(receiptFile));
    button("Back to projects", () -> show("Projects"));
   } catch (Exception failure) { error(failure); }
+ }
+
+ private void renderQualitySummary(JSONObject receipt){
+  section("Quality checks","Engineering checks are separate from artistic and game-engine acceptance.");
+  String state=receipt.optString("outcome","candidate");
+  boolean candidate=!"complete".equals(state);
+  qualityRow("Project status",candidate?"Candidate only · review required":"Asset written · visual review required",
+      candidate?0xffefb7a1:ACCENT);
+  JSONObject surface=receipt.optJSONObject("surface_audit");
+  if(surface!=null){
+   int degenerate=surface.optInt("uv_degenerate_triangles",0);
+   int out=surface.optInt("uv_outside_01_vertices",0);
+   int overlaps=surface.optInt("uv_overlapping_triangle_pairs",0);
+   String uvState=surface.optString("uv_overlap","not_checked");
+   boolean incomplete=uvState.startsWith("incomplete")||uvState.startsWith("none_detected_in_bounded")
+      ||uvState.equals("not_checked");
+   String uvMessage;
+   if(overlaps>0)uvMessage=overlaps+" possible overlaps · "+
+       surface.optInt("uv_cross_part_overlap_pairs",0)+" across separate parts";
+   else if(incomplete)uvMessage="Bounded check incomplete · inspect texture seams";
+   else uvMessage="No positive-area overlap found in checked UVs";
+   if(degenerate>0||out>0)
+    uvMessage+=" · "+degenerate+" collapsed triangles · "+out+" out-of-range vertices";
+   qualityRow("UV layout",uvMessage,overlaps>0||degenerate>0||out>0||incomplete?0xffedbc7a:ACCENT);
+  }else{
+   qualityRow("Surface and UVs","No technical surface audit recorded",0xffedbc7a);
+  }
+  String rig=receipt.optString("rig_validation","not_eligible");
+  qualityRow("Rig and motion",rig.equals("not_applicable")?"No skeleton on this asset":
+      rig.equals("unrigged")?"Not rigged for animation":
+      rig.replace('_',' ')+" · deformation not visually verified",MUTED);
+  qualityRow("Reference fidelity","Not visually accepted against the source",0xffedbc7a);
+  qualityRow("Engine delivery",receipt.optBoolean("unreal_import_executed",false)?
+      "Unreal importer ran; inspect native acceptance separately":
+      "NoWorld / Unreal native import not yet accepted",MUTED);
+ }
+ private void qualityRow(String title,String message,int tone){
+  LinearLayout line=new LinearLayout(this);line.setOrientation(1);
+  line.setPadding(dp(13),dp(7),dp(13),dp(7));
+  line.setBackground(panelShape(PANEL,12));
+  LinearLayout.LayoutParams margin=new LinearLayout.LayoutParams(-1,-2);
+  margin.setMargins(0,dp(3),0,dp(3));
+  TextView heading=text(title,13,INK);
+  heading.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+  line.addView(heading);
+  line.addView(text(message,12,tone));
+  body.addView(line,margin);
  }
 
 void showTechnicalReport(File file){
