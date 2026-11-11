@@ -37,3 +37,5 @@ The signed build must include the six existing pinned TripoSR, ISNet and SlimSAM
 Android reconstruction jobs extract the embedded archive once into private app data because ONNX external-data weights require local file paths. There is no model download, user import or post-install ZIP selection in the normal creation flow. Model extraction still uses device storage. Source-only CI compilation can omit the large weights, but Gradle APK packaging and the Windows signed-build script refuse an absent bundle.
 
 This is a source-level packaging change pending a signed Windows build and Samsung model extraction/inference test. It does not correct the currently documented visual reconstruction failures.
+
+When an old incomplete or same-size-but-corrupted manually installed model directory is encountered, the reconstruction worker preserves it under private `archive/model-recovery-*`, verifies the exact pinned member checksums, and extracts the APK-owned weights. Verified model paths are cached for the current app process so repeated jobs do not rehash hundreds of megabytes. Model recovery does not delete originals or require phone downloads.

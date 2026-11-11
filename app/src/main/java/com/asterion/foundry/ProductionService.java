@@ -576,10 +576,9 @@ public final class ProductionService extends Service {
         float scale = (float) request.getDouble("scale");
         int detail = request.getInt("detail");
         if (VOLUME.equals(kind)) {
-            if (!TripoModels.ready(store.root)) {
+            if (!TripoModels.ready(store.root))
                 stage(id, 0, "Preparing bundled offline 3D models");
-                TripoModels.ensureBundled(this, store.root);
-            }
+            TripoModels.ensureBundled(this, store.root);
             if (!TripoModels.ready(store.root))
                 throw new IOException("Bundled offline reconstruction models are unavailable");
             ActivityManager.MemoryInfo available = new ActivityManager.MemoryInfo();
