@@ -112,3 +112,49 @@ admit it to NoWorld.
   fixture. The latter reported its embedded skin.
 - Device execution of the updated APK and comparative visual quality
   remain unverified. The 0.1 phone checks above apply to 0.1 only.
+
+
+## 2026-11-11 — Staged quality v0.5 evaluation
+
+Development branch: `work/staged-production-quality-20261111`.
+Build source: `232c650198edfff60c4f5e0b5469a5ad71cfd15a`.
+APK publishing commit: `fcdb061a167eed85006352ff1cd527bff1f3dd6d`.
+APK: `dist/AsterionFoundry-v0.5.0-STAGED-EVALUATION.apk`.
+Version code 5, version name `0.5.0-staged-evaluation`.
+APK SHA-256: `e492c744943987788db48819dfbaf08fe2b78610b7ce71bbd9efc0d5baa0116f`.
+
+What changed:
+- `StageManifest` persists atomic, project-owned geometry/surface/export checkpoint
+  evidence with SHA-256 hashes, dependency invalidation and tamper detection.
+  Nonidentical upstream stages invalidate downstream evidence without deleting
+  prior outputs or the immutable originals. No stage ledger is fabricated for
+  old original-GLB-only packages.
+- `SurfaceAudit` records geometry UV range/degeneracy, sampled texture colours,
+  alpha and vertex palette separately from *unverified* reference appearance.
+  This audit does not automatically improve texture fidelity or validate seams,
+  morphology, materials under target lighting, rig deformation or visual quality.
+- `ProductionService` includes audit data in the receipt and writes stage evidence
+  for generated editable assets. `ProjectPackage` verifies and exports the
+  stage ledger, preserving the existing project, source and part export paths.
+- `StagePipelineAcceptance` exercises checksum binding, stage reuse,
+  dependency invalidation, unsafe output rejection, tamper detection and
+  sampled surface evidence. The Windows build invokes the fixture when the
+  existing host `org.json` JAR is available.
+
+Verified by the existing authorized Windows worker:
+- Android Java compilation, D8, native model preparation and integrity, host core
+  checks, stage fixture and GLB validation passed at the build source above.
+- APK v3 signature and 16 KiB archive/JNI alignment checks passed.
+- Original v0.2 and new v0.5 APK certificate SHA-256 matches:
+  `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`.
+- Build output emitted known `zip WARNING: header mismatch` messages during
+  tools processing. The final verification tools returned success; investigate
+  these warnings independently rather than asserting they are harmless.
+
+Not accepted:
+- The Samsung was paired but `phone_status` reported `reachable:false`;
+  native `phone_ui` and bridge checks returned HTTP 503 during this work.
+  No device install, live preview, inference benchmark, long-job recovery,
+  graphics quality, material or NoWorld native acceptance was established.
+- The full owner scope in `docs/SCOPE.md` and all roadmap completion gates
+  remain open. This is a bounded engineering increment, not the complete app.
