@@ -34,6 +34,7 @@ public final class ProductionService extends Service {
     static final String REVISION = "Mesh revision";
     static final String PART_SURFACE = "Edit part surface colour";
     static final String PART_MATERIAL = "Edit individual part PBR finish";
+    static final String PART_REPLACEMENT = "Replace separate mesh part";
     static final String FORM = "Saved form variant";
     static final String MOTION = "Skeletal animation";
     static final String SKIN_BLEND = "Blend skin weights";
@@ -178,9 +179,12 @@ public final class ProductionService extends Service {
         if (isRigTemplate(kind)) signature.append('|').append(SkinBlend.VERSION);
         if ("Humanoid with separate tunic".equals(kind)) signature.append('|').append(ClothDrape.VERSION);
         if ("Articulated dragon".equals(kind)) signature.append("|dragon_anatomy_v1");
-        Base base = REVISION.equals(kind) || PART_SURFACE.equals(kind) || PART_MATERIAL.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind)
+        Base base = REVISION.equals(kind) || PART_SURFACE.equals(kind) || PART_MATERIAL.equals(kind) || PART_REPLACEMENT.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind)
                 || ASSEMBLY.equals(kind) ? base(request) : null;
-        Base partner = ASSEMBLY.equals(kind) ? base(request.getString("partner"),request.getString("partner_mesh_sha256")) : null;
+        Base partner = ASSEMBLY.equals(kind) ? base(request.getString("partner"),request.getString("partner_mesh_sha256"))
+                : PART_REPLACEMENT.equals(kind) ? base(request.getString("donor"),request.getString("donor_mesh_sha256")) : null;
+        if (PART_REPLACEMENT.equals(kind) && !base.textureSha().equals(partner.textureSha()))
+            throw new IOException("Part geometry donors must use the same base-colour atlas (or both have none)");
         if (base != null) {
             signature.append("|derived-v2|").append(request.getString("parent_mesh_sha256"))
                     .append('|').append(base.textureSha()).append('|').append(base.materialsSha());
@@ -194,6 +198,11 @@ public final class ProductionService extends Service {
                         .append('|').append(request.getString("part_id"))
                         .append('|').append(request.getDouble("metallic"))
                         .append('|').append(request.getDouble("roughness"));
+                case PART_REPLACEMENT -> signature.append('|').append(PartReplacement.VERSION)
+                        .append('|').append(request.getString("part_id"))
+                        .append('|').append(request.getString("donor_part_id"))
+                        .append('|').append(request.getString("donor_mesh_sha256"))
+                        .append('|').append(partner.textureSha());
                 case MOTION -> signature.append('|').append(SkeletalMotion.VERSION).append('|')
                         .append(request.optString("motion_script", request.optString("motion_intent")));
                 case SKIN_BLEND -> signature.append('|').append(SkinBlend.VERSION);
@@ -332,6 +341,18 @@ public final class ProductionService extends Service {
                     .put("geometry_and_skin_unchanged", true)
                     .put("source_texture_reused", base.texture() != null)
                     .put("visual_fidelity", "unverified"));
+        }
+        if (PART_REPLACEMENT.equals(kind)) {
+            receipt.put("part_geometry_replacement", new JSONObject()
+                    .put("target_part_id",request.getString("part_id"))
+                    .put("donor_project",request.getString("donor"))
+                    .put("donor_part_id",request.getString("donor_part_id"))
+                    .put("donor_mesh_sha256",request.getString("donor_mesh_sha256"))
+                    .put("exact_rig_required",true)
+                    .put("shared_atlas_required",true)
+                    .put("target_ids_and_unmodified_parts_retained",true)
+                    .put("visual_fit", "unverified")
+                    .put("rig_deformation", "unverified"));
         }
         if (PART_MATERIAL.equals(kind)) {
             receipt.put("part_material_revision", new JSONObject()
@@ -624,6 +645,16 @@ public final class ProductionService extends Service {
                     .put("cross_part_fit","unverified").put("hidden_geometry","inferred_by_space_carving");
             return new Candidate(result.mesh(),metrics,encodeAtlas(result.atlas(),result.width(),result.height()));
         }
+        if (PART_REPLACEMENT.equals(kind)) {
+            Mesh changed = PartReplacement.replace(Mesh.load(base.mesh()),
+                    request.getString("part_id"), Mesh.load(partner.mesh()),
+                    request.getString("donor_part_id"));
+            return new Candidate(changed, new JSONObject()
+                    .put("method",PartReplacement.VERSION)
+                    .put("target_part",request.getString("part_id"))
+                    .put("geometry_transfer", "exact_rig_and_shared_atlas_only")
+                    .put("reference_fidelity","unverified"),base.textureBytes());
+        }
         if (PART_MATERIAL.equals(kind)) {
             return new Candidate(Mesh.load(base.mesh()), new JSONObject()
                     .put("method", PartMaterials.VERSION)
@@ -775,6 +806,7 @@ public final class ProductionService extends Service {
             case REVISION -> "non_destructive_mesh_revision";
             case PART_SURFACE -> PartSurface.VERSION;
             case PART_MATERIAL -> PartMaterials.VERSION;
+            case PART_REPLACEMENT -> PartReplacement.VERSION;
             case FORM -> "saved_form_rule_v1";
             case MOTION -> SkeletalMotion.VERSION;
             case SKIN_BLEND -> SkinBlend.VERSION;

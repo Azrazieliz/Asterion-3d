@@ -303,6 +303,7 @@ public final class MainActivity extends Activity {
     button("Create editable revision", () -> revisionDialog(id, request));
     button("Edit individual part colour", () -> { try { choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")); } catch (Exception failure) { error(failure); } });
     button("Edit individual part PBR finish", () -> { try { choosePartFinish(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
+    button("Replace a separate mesh part", () -> { try { choosePartReplacement(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
     button("Export editable package", () -> export(id));
     if (!mesh.bones.isEmpty()) {
      String baseSha = receipt.getString("editable_mesh_sha256");
@@ -605,6 +606,68 @@ public final class MainActivity extends Activity {
       } catch(Exception failure) { error(failure); }
     }));
   dialog.show();
+ }
+
+
+ private void choosePartReplacement(String id, Mesh target, JSONObject receipt) {
+  List<Mesh.Part> parts = target.parts();
+  String[] labels = parts.stream().map(part -> part.name() + " · " + part.role()).toArray(String[]::new);
+  new AlertDialog.Builder(this).setTitle("Choose the part to replace")
+    .setItems(labels, (dialog, index) -> choosePartDonor(id, target,
+        receipt, parts.get(index))).show();
+ }
+
+ private void choosePartDonor(String id, Mesh target, JSONObject receipt, Mesh.Part targetPart) {
+  try {
+   List<String> ids = new ArrayList<>(), hashes = new ArrayList<>(), names = new ArrayList<>();
+   for (JSONObject job : store.jobs()) {
+    String candidate = job.getString("id");
+    if (id.equals(candidate) || !"complete".equals(job.getString("state"))) continue;
+    File proofFile = new File(store.project(candidate),"receipt.json");
+    if (!proofFile.isFile()) continue;
+    JSONObject proof = new JSONObject(FilesUtil.readString(proofFile.toPath()));
+    String hash = proof.optString("editable_mesh_sha256");
+    if (hash.isEmpty() || proof.optInt("bones",0) != target.bones.size()
+        || !proof.optString("texture_sha256").equals(receipt.optString("texture_sha256"))) continue;
+    ids.add(candidate);
+    hashes.add(hash);
+    JSONObject request = new JSONObject(job.getString("request"));
+    String description = request.optString("description");
+    names.add(description.isBlank() ? request.getString("kind") : description);
+   }
+   if (ids.isEmpty()) throw new IOException("No compatible editable donor projects with the same texture atlas");
+   new AlertDialog.Builder(this).setTitle("Choose a source project")
+     .setItems(names.toArray(new String[0]), (dialog, index) -> {
+       try {
+        String donorId = ids.get(index);
+        File donorFile = new File(store.project(donorId),"checkpoint.mesh");
+        if (!hashes.get(index).equals(FilesUtil.hash(donorFile)))
+         throw new IOException("Donor geometry checksum mismatch");
+        Mesh donor = Mesh.load(donorFile);
+        if (!PartReplacement.sameRig(target,donor))
+         throw new IOException("Donor requires an identical ordered skeleton and rest pose");
+        List<Mesh.Part> candidates = donor.parts().stream()
+           .filter(part -> part.role().equals(targetPart.role())).toList();
+        if (candidates.isEmpty()) throw new IOException("Donor has no corresponding part role");
+        String[] choices = candidates.stream().map(part -> part.name() + " · " + part.id())
+            .toArray(String[]::new);
+        new AlertDialog.Builder(this).setTitle("Transfer part geometry")
+          .setMessage("Keeps target part ID and finishes. Requires the same rig and atlas. "
+              + "Fit, clipping and animation deformation are not visually verified.")
+          .setItems(choices, (second, selected) -> {
+            try {
+              enqueue(new JSONObject().put("kind",ProductionService.PART_REPLACEMENT)
+                .put("parent",id)
+                .put("parent_mesh_sha256",receipt.getString("editable_mesh_sha256"))
+                .put("donor",donorId).put("donor_mesh_sha256",hashes.get(index))
+                .put("part_id",targetPart.id()).put("donor_part_id",candidates.get(selected).id())
+                .put("scale",1).put("detail",12)
+                .put("description","Replace "+targetPart.name()+" using "+names.get(index)));
+            } catch (Exception failure) { error(failure); }
+          }).show();
+       } catch(Exception failure) { error(failure); }
+     }).show();
+  } catch(Exception failure) { error(failure); }
  }
 
  private void choosePartSurface(String id, Mesh mesh, String parentHash) {
