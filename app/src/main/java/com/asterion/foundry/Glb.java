@@ -7,6 +7,11 @@ public final class Glb {
   write(m,out,png,null);
  }
  public static SkeletalMotion.Validation write(Mesh m,File out,byte[] png,SkeletalMotion motion)throws Exception{
+  return write(m,out,png,motion,PartMaterials.empty());
+ }
+ public static SkeletalMotion.Validation write(Mesh m,File out,byte[] png,SkeletalMotion motion,PartMaterials finishes)throws Exception{
+  if(finishes==null)throw new IllegalArgumentException("Missing part material layer");
+  finishes.requireCompatible(m);
   SkeletalMotion.Validation validation=null;
   if(motion==null)m.validate();else validation=motion.validate(m);
   List<SkeletalMotion.Track> tracks=motion==null?Collections.emptyList():motion.tracks();
@@ -54,10 +59,11 @@ public final class Glb {
   j.append("],\"materials\":[");
   for(int i=0;i<parts.size();i++){
    if(i>0)j.append(',');Mesh.Part part=parts.get(i);
-   boolean armor=part.role().equals("armor"), sheets=part.role().equals("wing_membrane")||part.role().equals("garment");
+   boolean sheets=part.role().equals("wing_membrane")||part.role().equals("garment");
+   PartMaterials.Finish finish=finishes.forPart(part);
    j.append("{\"name\":").append(FilesUtil.quote(part.role().equals("surface")?"Vertex palette":part.name()))
     .append(",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,1,1,1]").append(png==null?"":",\"baseColorTexture\":{\"index\":0}")
-    .append(",\"metallicFactor\":").append(armor?"0.75":"0").append(",\"roughnessFactor\":").append(armor?"0.35":"0.8")
+    .append(",\"metallicFactor\":").append(finish.metallic()).append(",\"roughnessFactor\":").append(finish.roughness())
     .append("},\"alphaMode\":\"OPAQUE\"").append(sheets?",\"doubleSided\":true":"").append('}');
   }
   j.append(']').append(textures).append(",\"buffers\":[{\"byteLength\":").append(bin.capacity()).append("}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":").append(meshBytes).append(",\"byteStride\":").append(stride).append(",\"target\":34962}");

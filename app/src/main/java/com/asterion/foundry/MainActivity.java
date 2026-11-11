@@ -302,6 +302,7 @@ public final class MainActivity extends Activity {
    if (complete) {
     button("Create editable revision", () -> revisionDialog(id, request));
     button("Edit individual part colour", () -> { try { choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")); } catch (Exception failure) { error(failure); } });
+    button("Edit individual part PBR finish", () -> { try { choosePartFinish(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
     button("Export editable package", () -> export(id));
     if (!mesh.bones.isEmpty()) {
      String baseSha = receipt.getString("editable_mesh_sha256");
@@ -559,6 +560,51 @@ public final class MainActivity extends Activity {
   entry.setText(value);
   fields.addView(entry);
   return entry;
+ }
+
+
+ private void choosePartFinish(String id, Mesh mesh, JSONObject receipt) throws Exception {
+  File saved = receipt.has("part_materials_sha256")
+      ? new File(store.project(id), PartMaterials.FILE) : null;
+  if (saved != null && !receipt.getString("part_materials_sha256").equals(FilesUtil.hash(saved)))
+   throw new IOException("Saved PBR layer failed its checksum");
+  PartMaterials materials = PartMaterials.load(saved, mesh);
+  List<Mesh.Part> parts = mesh.parts();
+  String[] labels = parts.stream().map(part -> part.name() + " · " + part.role()).toArray(String[]::new);
+  new AlertDialog.Builder(this).setTitle("Select a part for PBR finish")
+    .setItems(labels, (dialog, selected) -> partFinishDialog(id,
+        receipt.optString("editable_mesh_sha256"), parts.get(selected),
+        materials.forPart(parts.get(selected)))).show();
+ }
+
+ private void partFinishDialog(String id, String parentHash, Mesh.Part part, PartMaterials.Finish finish) {
+  LinearLayout fields = new LinearLayout(this);
+  fields.setOrientation(1);
+  fields.setPadding(dp(20),0,dp(20),0);
+  fields.addView(text("Independent material on " + part.name()
+      + ". Geometry, existing colours, textures and skin remain unchanged. "
+      + "The GLB carries these PBR factors; phone preview lighting is not yet validated.",14,INK));
+  EditText metallic = formField(fields, "Metallic (0.0–1.0)", Double.toString(finish.metallic()));
+  EditText roughness = formField(fields, "Roughness (0.0–1.0)", Double.toString(finish.roughness()));
+  AlertDialog dialog = new AlertDialog.Builder(this)
+    .setTitle("Part PBR finish")
+    .setView(fields).setNegativeButton("Cancel", null)
+    .setPositiveButton("Create separate revision", null).create();
+  dialog.setOnShowListener(ignored ->
+    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+      try {
+        double metal = Double.parseDouble(metallic.getText().toString().trim());
+        double rough = Double.parseDouble(roughness.getText().toString().trim());
+        new PartMaterials.Finish(metal, rough);
+        enqueue(new JSONObject().put("kind",ProductionService.PART_MATERIAL)
+          .put("parent",id).put("parent_mesh_sha256",parentHash)
+          .put("part_id",part.id()).put("metallic",metal).put("roughness",rough)
+          .put("scale",1).put("detail",12)
+          .put("description",part.name() + " PBR finish revision"));
+        dialog.dismiss();
+      } catch(Exception failure) { error(failure); }
+    }));
+  dialog.show();
  }
 
  private void choosePartSurface(String id, Mesh mesh, String parentHash) {

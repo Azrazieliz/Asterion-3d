@@ -2,9 +2,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p test-output/classes
-javac -d test-output/classes app/src/main/java/com/asterion/foundry/{FilesUtil,Mesh,Recipes,Glb,VisualHull,GeometryAudit,DepthRelief,MeshRevision,PartSurface,FormLibrary,SkeletalMotion,ReferenceView,PoseEvidence,SkinBlend,ClothDrape,RigAssembly,DragonRig,PartHull}.java tests/{CoreAcceptance,PartSurfaceAcceptance,FormAcceptance,MotionAcceptance,ReferenceViewAcceptance,PoseEvidenceAcceptance,SkinBlendAcceptance,ScenePartsAcceptance,DragonRigAcceptance,ChoreographyAcceptance,PartHullAcceptance}.java
+javac -d test-output/classes app/src/main/java/com/asterion/foundry/{FilesUtil,Mesh,Recipes,Glb,VisualHull,GeometryAudit,DepthRelief,MeshRevision,PartSurface,PartMaterials,FormLibrary,SkeletalMotion,ReferenceView,PoseEvidence,SkinBlend,ClothDrape,RigAssembly,DragonRig,PartHull}.java tests/{CoreAcceptance,PartSurfaceAcceptance,PartMaterialsAcceptance,FormAcceptance,MotionAcceptance,ReferenceViewAcceptance,PoseEvidenceAcceptance,SkinBlendAcceptance,ScenePartsAcceptance,DragonRigAcceptance,ChoreographyAcceptance,PartHullAcceptance}.java
 java -cp test-output/classes CoreAcceptance
 java -cp test-output/classes com.asterion.foundry.PartSurfaceAcceptance
+java -cp test-output/classes com.asterion.foundry.PartMaterialsAcceptance
 java -cp test-output/classes com.asterion.foundry.FormAcceptance
 java -cp test-output/classes MotionAcceptance
 java -cp test-output/classes com.asterion.foundry.ReferenceViewAcceptance

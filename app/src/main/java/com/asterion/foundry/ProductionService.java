@@ -33,6 +33,7 @@ public final class ProductionService extends Service {
     static final String PART_HULL = "Calibrated part references";
     static final String REVISION = "Mesh revision";
     static final String PART_SURFACE = "Edit part surface colour";
+    static final String PART_MATERIAL = "Edit individual part PBR finish";
     static final String FORM = "Saved form variant";
     static final String MOTION = "Skeletal animation";
     static final String SKIN_BLEND = "Blend skin weights";
@@ -177,18 +178,22 @@ public final class ProductionService extends Service {
         if (isRigTemplate(kind)) signature.append('|').append(SkinBlend.VERSION);
         if ("Humanoid with separate tunic".equals(kind)) signature.append('|').append(ClothDrape.VERSION);
         if ("Articulated dragon".equals(kind)) signature.append("|dragon_anatomy_v1");
-        Base base = REVISION.equals(kind) || PART_SURFACE.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind)
+        Base base = REVISION.equals(kind) || PART_SURFACE.equals(kind) || PART_MATERIAL.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind)
                 || ASSEMBLY.equals(kind) ? base(request) : null;
         Base partner = ASSEMBLY.equals(kind) ? base(request.getString("partner"),request.getString("partner_mesh_sha256")) : null;
         if (base != null) {
             signature.append("|derived-v2|").append(request.getString("parent_mesh_sha256"))
-                    .append('|').append(base.textureSha());
+                    .append('|').append(base.textureSha()).append('|').append(base.materialsSha());
             switch (kind) {
                 case FORM -> signature.append('|').append(request.getJSONObject("form"));
                 case PART_SURFACE -> signature.append('|').append(PartSurface.VERSION)
                         .append('|').append(request.getString("part_id"))
                         .append('|').append(request.getInt("part_rgb"))
                         .append('|').append(request.getDouble("part_strength"));
+                case PART_MATERIAL -> signature.append('|').append(PartMaterials.VERSION)
+                        .append('|').append(request.getString("part_id"))
+                        .append('|').append(request.getDouble("metallic"))
+                        .append('|').append(request.getDouble("roughness"));
                 case MOTION -> signature.append('|').append(SkeletalMotion.VERSION).append('|')
                         .append(request.optString("motion_script", request.optString("motion_intent")));
                 case SKIN_BLEND -> signature.append('|').append(SkinBlend.VERSION);
@@ -222,6 +227,13 @@ public final class ProductionService extends Service {
         }
         FilesUtil.write(checkpointMetrics, candidate.metrics.toString(2));
         candidate.mesh.save(checkpoint);
+        PartMaterials finishes = base == null ? PartMaterials.empty()
+                : PartMaterials.load(base.materials(), candidate.mesh);
+        if (PART_MATERIAL.equals(kind)) finishes = finishes.change(candidate.mesh,
+                request.getString("part_id"), request.getDouble("metallic"), request.getDouble("roughness"));
+        File materialLayer = new File(directory, PartMaterials.FILE);
+        if (finishes.isEmpty()) Files.deleteIfExists(materialLayer.toPath());
+        else finishes.save(materialLayer);
         stageManifest.publish("geometry", Map.of("production_key", key),
                 Map.of("checkpoint.mesh", checkpoint, "reference-metrics.json", checkpointMetrics),
                 SystemClock.elapsedRealtime() - start);
@@ -237,9 +249,17 @@ public final class ProductionService extends Service {
 
         stage(id, 2, "Auditing surface, topology and writing GLB");
         JSONObject surfaceEvidence = surfaceEvidence(candidate.mesh, candidate.texture);
-        stageManifest.publish("surface", Map.of("geometry_sha256", FilesUtil.hash(checkpoint)),
-                candidate.texture == null ? Map.of("reference-metrics.json", checkpointMetrics)
-                        : Map.of("base-color.png", texture), SystemClock.elapsedRealtime() - start);
+        Map<String, String> surfaceInputs = new java.util.LinkedHashMap<>();
+        surfaceInputs.put("geometry_sha256", FilesUtil.hash(checkpoint));
+        Map<String, File> surfaceFiles = new java.util.LinkedHashMap<>();
+        if (candidate.texture == null) surfaceFiles.put("reference-metrics.json", checkpointMetrics);
+        else surfaceFiles.put("base-color.png", texture);
+        if (!finishes.isEmpty()) {
+            surfaceInputs.put("part_materials_sha256", FilesUtil.hash(materialLayer));
+            surfaceFiles.put(PartMaterials.FILE, materialLayer);
+        }
+        stageManifest.publish("surface", surfaceInputs, surfaceFiles,
+                SystemClock.elapsedRealtime() - start);
         GeometryAudit.Result audit = PART_HULL.equals(kind) ? null : GeometryAudit.inspect(candidate.mesh, this::check);
         File asset = new File(directory, "asset.glb");
         JSONObject motionEvidence = null;
@@ -247,14 +267,14 @@ public final class ProductionService extends Service {
             String script = request.has("motion_script") ? request.getString("motion_script")
                     : SkeletalMotion.compose(candidate.mesh, request.getString("motion_intent"));
             SkeletalMotion clip = SkeletalMotion.parse(candidate.mesh, script);
-            SkeletalMotion.Validation validation = Glb.write(candidate.mesh, asset, candidate.texture, clip);
+            SkeletalMotion.Validation validation = Glb.write(candidate.mesh, asset, candidate.texture, clip, finishes);
             File editableMotion = new File(directory,"motion.foundry.txt");
             FilesUtil.write(editableMotion,script);
             motionEvidence = new JSONObject(validation.json()).put("editable_script_sha256",FilesUtil.hash(editableMotion))
                     .put("method",request.has("motion_script") ? "authored_local_joint_tracks" : "deterministic_motion_composition")
                     .put("visual_playback_validation", "not_performed");
         } else {
-            Glb.write(candidate.mesh, asset, candidate.texture);
+            Glb.write(candidate.mesh, asset, candidate.texture, null, finishes);
         }
         stage(id, 3, "Writing validation receipt");
         JSONObject receipt = new JSONObject(candidate.mesh.validate())
@@ -294,6 +314,7 @@ public final class ProductionService extends Service {
         }
         if(!candidate.mesh.bones.isEmpty())receipt.put("rig_roots",candidate.mesh.bones.stream().filter(bone->bone.parent<0).count());
         if (candidate.texture != null) receipt.put("texture_sha256", candidate.metrics.getString("texture_sha256"));
+        if (!finishes.isEmpty()) receipt.put("part_materials_sha256", FilesUtil.hash(materialLayer));
         if (motionEvidence != null) receipt.put("motion",motionEvidence);
         if (VOLUME.equals(kind) && request.optBoolean("human_reference")) {
             stage(id, 3, "Checking source anatomy evidence");
@@ -312,6 +333,15 @@ public final class ProductionService extends Service {
                     .put("source_texture_reused", base.texture() != null)
                     .put("visual_fidelity", "unverified"));
         }
+        if (PART_MATERIAL.equals(kind)) {
+            receipt.put("part_material_revision", new JSONObject()
+                    .put("part_id", request.getString("part_id"))
+                    .put("metallic", request.getDouble("metallic"))
+                    .put("roughness", request.getDouble("roughness"))
+                    .put("geometry_skin_and_base_texture_unchanged", true)
+                    .put("preview_pbr_lighting", "not_validated")
+                    .put("texture_reconstruction", "not_implemented"));
+        }
         if (FORM.equals(kind)) {
             receipt.put("form",request.getJSONObject("form"))
                     .put("form_generation", "deterministic_proportions_and_material_tint")
@@ -328,8 +358,11 @@ public final class ProductionService extends Service {
                 .put("manifestation_id", JSONObject.NULL).put("native_acceptance", false)
                 .put("warnings", new JSONArray().put("NoWorld adapter has not admitted this asset"))
                 .toString(2));
-        stageManifest.publish("export", Map.of("geometry_sha256", FilesUtil.hash(checkpoint),
-                        "surface_sha256", FilesUtil.hash(candidate.texture == null ? checkpointMetrics : texture)),
+        Map<String, String> exportInputs = new java.util.LinkedHashMap<>(Map.of(
+                "geometry_sha256", FilesUtil.hash(checkpoint),
+                "surface_sha256", FilesUtil.hash(candidate.texture == null ? checkpointMetrics : texture)));
+        if (!finishes.isEmpty()) exportInputs.put("part_materials_sha256", FilesUtil.hash(materialLayer));
+        stageManifest.publish("export", exportInputs,
                 Map.of("asset.glb", asset, "receipt.json", new File(directory, "receipt.json"),
                         "import-manifest.json", new File(directory, "import-manifest.json")),
                 SystemClock.elapsedRealtime() - start);
@@ -464,7 +497,7 @@ public final class ProductionService extends Service {
         Candidate(Mesh mesh, JSONObject metrics) { this(mesh,metrics,null); }
     }
 
-    private record Base(File mesh, File texture, String textureSha) {
+    private record Base(File mesh, File texture, String textureSha, File materials, String materialsSha) {
         byte[] textureBytes() throws IOException {
             return texture == null ? null : Files.readAllBytes(texture.toPath());
         }
@@ -489,7 +522,12 @@ public final class ProductionService extends Service {
         if (texture != null && !textureSha.equals(FilesUtil.hash(texture))) {
             throw new IOException("Base texture checksum does not match");
         }
-        return new Base(mesh, texture, textureSha);
+        String materialsSha = receipt.optString("part_materials_sha256");
+        File materials = materialsSha.isEmpty() ? null : new File(directory, PartMaterials.FILE);
+        if (materials != null && !materialsSha.equals(FilesUtil.hash(materials))) {
+            throw new IOException("Base PBR material layer checksum does not match");
+        }
+        return new Base(mesh, texture, textureSha, materials, materialsSha);
     }
 
     private static Candidate readCandidate(File mesh, File metrics, File texture, String kind) {
@@ -585,6 +623,13 @@ public final class ProductionService extends Service {
                     .put("atlas_width",result.width()).put("atlas_height",result.height())
                     .put("cross_part_fit","unverified").put("hidden_geometry","inferred_by_space_carving");
             return new Candidate(result.mesh(),metrics,encodeAtlas(result.atlas(),result.width(),result.height()));
+        }
+        if (PART_MATERIAL.equals(kind)) {
+            return new Candidate(Mesh.load(base.mesh()), new JSONObject()
+                    .put("method", PartMaterials.VERSION)
+                    .put("target_part", request.getString("part_id"))
+                    .put("geometry_edit", false).put("texture_edit", false),
+                    base.textureBytes());
         }
         if (PART_SURFACE.equals(kind)) {
             Mesh recoloured = PartSurface.recolour(Mesh.load(base.mesh()),
@@ -729,6 +774,7 @@ public final class ProductionService extends Service {
             case DEPTH -> "midas_relative_depth_relief_v1";
             case REVISION -> "non_destructive_mesh_revision";
             case PART_SURFACE -> PartSurface.VERSION;
+            case PART_MATERIAL -> PartMaterials.VERSION;
             case FORM -> "saved_form_rule_v1";
             case MOTION -> SkeletalMotion.VERSION;
             case SKIN_BLEND -> SkinBlend.VERSION;

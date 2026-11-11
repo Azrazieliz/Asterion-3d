@@ -23,7 +23,7 @@ final class StageManifest {
     private static final Set<String> ALLOWED_FILES = Set.of(
             "checkpoint.mesh", "reference-metrics.json", "base-color.png",
             "asset.glb", "receipt.json", "import-manifest.json",
-            "motion.foundry.txt");
+            "motion.foundry.txt", "part-materials.foundry");
     private final File directory;
     private final File manifest;
     private JSONObject stages;
