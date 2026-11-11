@@ -1,6 +1,7 @@
 """Prepare the exact, offline Android model and runtime on a build machine."""
 import argparse
 import os
+import time
 import hashlib
 from pathlib import Path
 import shutil
@@ -11,6 +12,54 @@ import zipfile
 from create_tripo_pack import FILES as RECONSTRUCTION_FILES
 
 EMBEDDED_PACK = "foundry-3d.foundrymodels"
+
+# Build-machine-only sources. Every downloaded byte is checked against
+# scripts/create_tripo_pack.py before it can enter a signed APK.
+# No model network feature is shipped in the Android application.
+REMOTE_PINS = {
+    "triplane_q8.onnx": "https://huggingface.co/cgb/triposr-onnx-webgpu/resolve/048725e957f485cc6bc082a9d6a239fcf7d8880a/triplane_q8.onnx",
+    "triplane_q8.onnx.data": "https://huggingface.co/cgb/triposr-onnx-webgpu/resolve/048725e957f485cc6bc082a9d6a239fcf7d8880a/triplane_q8.onnx.data",
+    "decoder.onnx": "https://huggingface.co/cgb/triposr-onnx-webgpu/resolve/048725e957f485cc6bc082a9d6a239fcf7d8880a/decoder.onnx",
+    "isnetis.onnx": "https://huggingface.co/skytnt/anime-seg/resolve/a0a563c41338cbe0d23dfb4bfc3e243c518e5768/isnetis.onnx",
+    "vision_encoder.onnx": "https://huggingface.co/Xenova/slimsam-77-uniform/resolve/main/onnx/vision_encoder.onnx",
+    "prompt_encoder_mask_decoder.onnx": "https://huggingface.co/Xenova/slimsam-77-uniform/resolve/main/onnx/prompt_encoder_mask_decoder.onnx",
+}
+
+def obtain_reconstruction_models(cache):
+    """Fetch at build time only; resume by retaining verified immutable cache files."""
+    cache.mkdir(parents=True, exist_ok=True)
+    for name, (size, sha256) in RECONSTRUCTION_FILES.items():
+        source = cache / name
+        if source.is_file() and source.stat().st_size == size and digest(source) == sha256:
+            continue
+        if name not in REMOTE_PINS:
+            raise ValueError(f"Missing licensed source pin for {name}")
+        temporary = cache / (name + ".incoming")
+        for attempt in range(3):
+            temporary.unlink(missing_ok=True)
+            try:
+                with urllib.request.urlopen(
+                        urllib.request.Request(REMOTE_PINS[name],
+                            headers={"User-Agent": "AsterionFoundry-Build/0.5.2"}),
+                        timeout=90) as response, temporary.open("wb") as output:
+                    size_seen = 0
+                    hasher = hashlib.sha256()
+                    while chunk := response.read(1024 * 1024):
+                        size_seen += len(chunk)
+                        if size_seen > size:
+                            raise ValueError(f"Oversized reconstruction weight from source: {name}")
+                        hasher.update(chunk)
+                        output.write(chunk)
+                if size_seen != size or hasher.hexdigest() != sha256:
+                    raise ValueError(f"Source size or SHA-256 mismatch for {name}")
+                temporary.replace(source)
+                break
+            except Exception:
+                temporary.unlink(missing_ok=True)
+                if attempt == 2:
+                    raise
+                time.sleep(attempt + 1)
+    return cache
 
 MODEL = "midas_small_256_fp16.tflite"
 POSE_MODEL = "movenet_lightning_v4_fp16.tflite"
@@ -136,13 +185,18 @@ def main():
     parser.add_argument("--model-dir", type=Path, default=os.environ.get("FOUNDRY_MODELS_DIR"))
     parser.add_argument("--model-archive", type=Path, default=os.environ.get("FOUNDRY_MODEL_ARCHIVE"))
     parser.add_argument("--require-embedded-models", action="store_true")
+    parser.add_argument("--fetch-embedded-models", action="store_true",
+                        help="Build-machine only: fetch exact pinned weights when no local source is configured")
     args = parser.parse_args()
     stage = args.stage.resolve()
     cache = stage.parent / "downloads"
     cache.mkdir(parents=True, exist_ok=True)
     for folder in ("assets/licenses", "jni/arm64-v8a", "jars"):
         (stage / folder).mkdir(parents=True, exist_ok=True)
-    embedded = embed_reconstruction(stage, args.model_dir, args.model_archive, args.require_embedded_models)
+    model_dir = args.model_dir
+    if args.require_embedded_models and args.fetch_embedded_models             and not model_dir and not args.model_archive:
+        model_dir = obtain_reconstruction_models(cache / "reconstruction-models")
+    embedded = embed_reconstruction(stage, model_dir, args.model_archive, args.require_embedded_models)
     for name in (MODEL, POSE_MODEL):
         model = obtain(cache, name)
         with model.open("rb") as stream:

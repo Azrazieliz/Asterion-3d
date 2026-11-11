@@ -39,3 +39,8 @@ Android reconstruction jobs extract the embedded archive once into private app d
 This is a source-level packaging change pending a signed Windows build and Samsung model extraction/inference test. It does not correct the currently documented visual reconstruction failures.
 
 When an old incomplete or same-size-but-corrupted manually installed model directory is encountered, the reconstruction worker preserves it under private `archive/model-recovery-*`, verifies the exact pinned member checksums, and extracts the APK-owned weights. Verified model paths are cached for the current app process so repeated jobs do not rehash hundreds of megabytes. Model recovery does not delete originals or require phone downloads.
+
+
+### Windows build without manual model-pack assembly
+
+The authorized Windows build can now fetch the six exact weights automatically **during the build only** if `FOUNDRY_MODEL_ARCHIVE` and `FOUNDRY_MODELS_DIR` are unset. `prepare_native.py --require-embedded-models --fetch-embedded-models` downloads from the pinned TripoSR, ISNet and SlimSAM upstream repositories into a local build cache with exact member byte counts and SHA-256 checks. An existing verified archive/directory takes precedence; cached files are reused, corrupted weights are rejected and a partial APK is never published. This has not yet been exercised on the Windows worker. The Android application itself does not have network permission or a model download feature.
