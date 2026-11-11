@@ -9,6 +9,9 @@ import org.json.JSONObject;
 
 /** Immutable content-addressed original files, separated from generated projects. */
 final class SourceFiles {
+    static final long DEFAULT_IMPORT_BYTES = 64L * 1024 * 1024;
+    static final long MODEL_IMPORT_BYTES = 1024L * 1024 * 1024;
+    private static final long MIN_FREE_BYTES = 256L * 1024 * 1024;
     private final File root;
 
     SourceFiles(File storage) {
@@ -16,7 +19,15 @@ final class SourceFiles {
     }
 
     File preserve(InputStream input) throws Exception {
+        return preserve(input, DEFAULT_IMPORT_BYTES);
+    }
+
+    File preserve(InputStream input, long maxBytes) throws Exception {
         if (input == null) throw new IOException("The document provider returned no input");
+        if (maxBytes != DEFAULT_IMPORT_BYTES && maxBytes != MODEL_IMPORT_BYTES)
+            throw new IOException("Unsupported import size budget");
+        if (root.getUsableSpace() < MIN_FREE_BYTES)
+            throw new IOException("Not enough free app storage to preserve an original source");
         File temporary = File.createTempFile("import-", ".incoming", root);
         try {
             try (FileOutputStream output = new FileOutputStream(temporary)) {
@@ -24,8 +35,12 @@ final class SourceFiles {
                 long size = 0;
                 for (int n; (n = input.read(buffer)) != -1;) {
                     size += n;
-                    if (size > 64L * 1024 * 1024) throw new IOException("An original may be at most 64 MiB");
+                    if (size > maxBytes)
+                        throw new IOException("This source exceeds the selected " + (maxBytes / (1024 * 1024)) + " MiB import limit");
                     output.write(buffer, 0, n);
+                    if ((size & ((16L * 1024 * 1024) - 1)) < n
+                            && root.getUsableSpace() < MIN_FREE_BYTES)
+                        throw new IOException("Original source import stopped to preserve free app storage");
                 }
                 if (size == 0) throw new IOException("The selected source is empty");
                 output.getFD().sync();

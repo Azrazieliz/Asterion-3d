@@ -1109,12 +1109,18 @@ void showTechnicalReport(File file){
   if (result != RESULT_OK || data == null || data.getData() == null) return;
   Uri uri = data.getData();
   String exporting = exportId;
+  // Large source geometry is streamed to immutable storage, not held as a bitmap.
+  // Only self-contained GLBs receive the 1 GiB budget; reference images,
+  // mod cards, general files and part textures retain the 64 MiB cap.
+  boolean largeOriginal = code == 22 || (code == 1 && kind != null
+      && originalGlbMode((String)kind.getSelectedItem()));
   new Thread(() -> {
    try {
     if (code == 21 || code == 22) {
      File original;
      try (InputStream input = getContentResolver().openInputStream(uri)) {
-      original = new SourceFiles(store.root).preserve(input);
+      original = new SourceFiles(store.root).preserve(input,
+          largeOriginal ? SourceFiles.MODEL_IMPORT_BYTES : SourceFiles.DEFAULT_IMPORT_BYTES);
      }
      if (code == 21) {
       SourceFiles.decode(original,128);
@@ -1144,7 +1150,8 @@ void showTechnicalReport(File file){
     if (code != 1 && code != 3 && code != 23 && code != 24 && code != 25 && (code < 11 || code > 13)) return;
     File original;
     try (InputStream input = getContentResolver().openInputStream(uri)) {
-     original = new SourceFiles(store.root).preserve(input);
+     original = new SourceFiles(store.root).preserve(input,
+         largeOriginal ? SourceFiles.MODEL_IMPORT_BYTES : SourceFiles.DEFAULT_IMPORT_BYTES);
     }
     runOnUiThread(() -> {
      if (code == 25) {

@@ -239,3 +239,8 @@ Starting from the previous M1 checkpoint, the branch now includes:
 - `cb361699`: hermetic build-policy tests cover missing, copied and tampered pinned model archives without downloading the 700 MB source pack in CI.
 
 **What was verified:** code was committed to the canonical branch; prior GitHub Actions source compilation and host regression jobs passed. The new model-pack contract tests have a GitHub CI run, but their result must be inspected separately. **What was not verified:** a new Windows signed APK, actual package size, model pack availability on the Windows worker, Android installation/first-use extraction, Samsung screenshot usability, offline inference quality, visual fidelity, and NoWorld native/Unreal import. The existing published v0.5.1 APK is unchanged. See [UI_AND_BUNDLING.md](UI_AND_BUNDLING.md) for the non-negotiable phone acceptance gate.
+
+
+## 2026-11-11 — Streamed larger self-contained GLB originals (source only)
+
+Original GLB import and the registered original-GLB partner picker now preserve input streams up to **1 GiB** without reading the whole binary into memory. Other source categories retain the 64 MiB limit, protecting image decoders, reference bundles and incidental imports. Source preservation uses content hashes and fails before overwriting originals; every import additionally retains at least 256 MiB free app storage, including during streaming. This is a bounded intake change, **not** proof that a 1 GiB model edits interactively or imports into Unreal. Android source compilation and actual phone imports remain separate acceptance checks.
