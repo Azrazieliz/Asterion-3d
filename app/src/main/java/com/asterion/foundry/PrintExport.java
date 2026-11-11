@@ -28,7 +28,8 @@ public final class PrintExport {
     private static final long MAX_EDGES=Mesh.LIMIT;
     private static final int HEADER_BYTES=80;
 
-    public record Options(double heightMm) {
+    public record Options(double heightMm, boolean allowSeparateClosedShells) {
+        public Options(double heightMm) { this(heightMm,false); }
         public Options {
             if(!Double.isFinite(heightMm)||heightMm<10||heightMm>600)
                 throw new IllegalArgumentException("Print height must be 10 to 600 mm");
@@ -39,20 +40,23 @@ public final class PrintExport {
                         double heightMm, long boundaryEdges, long nonManifoldEdges,
                         long windingConflicts, long degenerateTriangles,
                         long inwardOrZeroVolumeParts, double shortestEdgeMm,
-                        double signedVolumeMm3, boolean technicallyClosed) {
+                        double signedVolumeMm3, int disconnectedShells,
+                        boolean multiShellMode, boolean technicallyClosed) {
         public void requireGeometryGate() throws IOException {
             if(!technicallyClosed)
                 throw new IOException("Print geometry rejected: "+boundaryEdges+
                         " boundary edges, "+nonManifoldEdges+" non-manifold edges, "+
                         windingConflicts+" winding conflicts, "+degenerateTriangles+
                         " degenerate triangles, "+inwardOrZeroVolumeParts+
-                        " inward/zero-volume parts. Repair the editable source first.");
+                        " inward/zero-volume parts, "+disconnectedShells+
+                        " disconnected shells. Join the source or explicitly allow closed multi-piece printing.");
         }
         public String summary() {
             return triangles+" triangles · "+parts+" part(s) · "+
                 String.format(java.util.Locale.ROOT,"%.1f × %.1f × %.1f mm",widthMm,depthMm,heightMm)
-                +" · closed="+technicallyClosed
-                +" · wall thickness, support structures and self-intersections NOT validated";
+                +" · closed="+technicallyClosed+" · shells="+disconnectedShells+
+                (multiShellMode?" (multiple closed shells permitted)":" (single shell required)")+
+                " · wall thickness, support structures and self-intersections NOT validated";
         }
     }
 
@@ -98,6 +102,10 @@ public final class PrintExport {
         double[] volumes=new double[parts.size()];
         long[] lo=new long[verts],hi=new long[verts];
         byte[] direction=new byte[verts];
+        int[] edgeOwner=new int[verts];
+        int[] parent=new int[triangles];
+        byte[] rank=new byte[triangles];
+        for(int t=0;t<triangles;t++)parent[t]=t;
         long degenerate=0;
         double shortest=Double.POSITIVE_INFINITY;
         double minX=Double.POSITIVE_INFINITY,maxX=Double.NEGATIVE_INFINITY,
@@ -138,9 +146,10 @@ public final class PrintExport {
                 lo[edge]=ascending?a:c;
                 hi[edge]=ascending?c:a;
                 direction[edge]=(byte)(ascending?1:-1);
+                edgeOwner[edge]=tri;
             }
         }
-        sortEdges(lo,hi,direction);
+        sortEdges(lo,hi,direction,edgeOwner);
         long boundary=0,nonManifold=0,winding=0;
         for(int i=0;i<verts;){
             if((i&0xffff)==0)budget.check();
@@ -152,6 +161,7 @@ public final class PrintExport {
             if(incidence==1)boundary++;
             else if(incidence>2)nonManifold++;
             if(incidence==2&&sign!=0)winding++;
+            for(int k=i+1;k<next;k++)union(parent,rank,edgeOwner[i],edgeOwner[k]);
             i=next;
         }
         long inverted=0;
@@ -160,10 +170,13 @@ public final class PrintExport {
             volume+=v;
             if(v<=MIN_VOLUME_MM3)inverted++;
         }
+        int shells=0;
+        for(int t=0;t<triangles;t++)if(find(parent,t)==t)shells++;
         boolean closed=boundary==0&&nonManifold==0&&winding==0&&
-                degenerate==0&&inverted==0;
+                degenerate==0&&inverted==0&&(shells==1||options.allowSeparateClosedShells());
         return new Audit(triangles,parts.size(),maxX-minX,maxY-minY,maxZ-minZ,
-                boundary,nonManifold,winding,degenerate,inverted,shortest,volume,closed);
+                boundary,nonManifold,winding,degenerate,inverted,shortest,volume,
+                shells,options.allowSeparateClosedShells(),closed);
     }
 
     /**
@@ -214,30 +227,41 @@ public final class PrintExport {
 
     // Primitive in-place heapsort avoids per-edge objects and unbounded recursion.
     // A large 500k-triangle asset uses ~26 MB for 1.5m oriented edges.
-    private static void sortEdges(long[] first,long[] second,byte[] sign) {
+    private static int find(int[] parent,int node){
+        while(parent[node]!=node){parent[node]=parent[parent[node]];node=parent[node];}
+        return node;
+    }
+    private static void union(int[] parent,byte[] rank,int a,int b){
+        a=find(parent,a);b=find(parent,b);if(a==b)return;
+        if(rank[a]<rank[b])parent[a]=b;
+        else if(rank[a]>rank[b])parent[b]=a;
+        else{parent[b]=a;rank[a]++;}
+    }
+    private static void sortEdges(long[] first,long[] second,byte[] sign,int[] owner) {
         int length=first.length;
-        for(int start=length/2-1;start>=0;start--)sift(first,second,sign,start,length);
+        for(int start=length/2-1;start>=0;start--)sift(first,second,sign,owner,start,length);
         for(int end=length-1;end>0;end--){
-            swap(first,second,sign,0,end);
-            sift(first,second,sign,0,end);
+            swap(first,second,sign,owner,0,end);
+            sift(first,second,sign,owner,0,end);
         }
     }
-    private static void sift(long[] a,long[] b,byte[] s,int root,int size){
+    private static void sift(long[] a,long[] b,byte[] s,int[] owner,int root,int size){
         while(true){
             int child=root*2+1;
             if(child>=size)return;
             if(child+1<size&&compare(a,b,child,child+1)<0)child++;
             if(compare(a,b,root,child)>=0)return;
-            swap(a,b,s,root,child);root=child;
+            swap(a,b,s,owner,root,child);root=child;
         }
     }
     private static int compare(long[] a,long[] b,int i,int j){
         int cmp=Long.compareUnsigned(a[i],a[j]);
         return cmp!=0?cmp:Long.compareUnsigned(b[i],b[j]);
     }
-    private static void swap(long[] a,long[] b,byte[] s,int i,int j){
+    private static void swap(long[] a,long[] b,byte[] s,int[] owner,int i,int j){
         long t=a[i];a[i]=a[j];a[j]=t;
         t=b[i];b[i]=b[j];b[j]=t;
         byte v=s[i];s[i]=s[j];s[j]=v;
+        int v2=owner[i];owner[i]=owner[j];owner[j]=v2;
     }
 }
