@@ -65,8 +65,15 @@ final class MeshThumbnail {
             int top=Math.max(0,(int)Math.floor(Math.min(ay,Math.min(by,dy))));
             int bottom=Math.min(SIZE-1,(int)Math.ceil(Math.max(ay,Math.max(by,dy))));
             if(right<left||bottom<top)continue;
-            double len=Math.hypot(bx-ax,by-ay);
-            double intensity=Math.max(.40,Math.min(.95,.62+.20*(len/(len+18))));
+            // View-space face normal: depth-aware flat lighting rather than a
+            // fabricated physically-based material render.
+            double ux=x[b]-x[a],uy=y[b]-y[a],uz=z[b]-z[a];
+            double vx=x[c]-x[a],vy=y[c]-y[a],vz=z[c]-z[a];
+            double nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+            double normalLength=Math.sqrt(nx*nx+ny*ny+nz*nz);
+            double light=normalLength>1e-10
+                ?Math.abs((-.37*nx+.58*ny+.72*nz)/normalLength):0;
+            double intensity=Math.max(.34,Math.min(.96,.38+.57*light));
             float[] v0=mesh.vertices.get(a),v1=mesh.vertices.get(b),v2=mesh.vertices.get(c);
             double alpha=(v0[11]+v1[11]+v2[11])/3;
             if(alpha<.08)continue;
