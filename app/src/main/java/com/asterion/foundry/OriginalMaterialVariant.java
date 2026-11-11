@@ -109,6 +109,115 @@ final class OriginalMaterialVariant {
         }
     }
 
+
+    /** Non-destructive numeric PBR edit of a uniquely named source material. */
+    record FactorResult(int materialIndex,String materialName,double metallic,double roughness) {}
+
+    static FactorResult factors(File source,String materialName) throws Exception {
+        JSONObject document=OriginalGlb.document(source);
+        int index=find(document.optJSONArray("materials"),materialName);
+        JSONObject material=document.getJSONArray("materials").getJSONObject(index);
+        JSONObject pbr=material.optJSONObject(PBR);
+        return new FactorResult(index,materialName,pbr==null?1:pbr.optDouble("metallicFactor",1),
+                pbr==null?1:pbr.optDouble("roughnessFactor",1));
+    }
+
+    static FactorResult writePbrFactors(File source,File output,String materialName,
+                                        double metallic,double roughness) throws Exception {
+        if(!unit(metallic)||!unit(roughness))
+            throw new IllegalArgumentException("PBR factors must be finite and from 0 to 1");
+        if(materialName==null||materialName.isBlank())
+            throw new IllegalArgumentException("Choose a named source material");
+        if(source.getCanonicalFile().equals(output.getCanonicalFile())
+                || (output.isFile()&&Files.isSameFile(source.toPath(),output.toPath())))
+            throw new IOException("Source materials can only be revised in a separate file");
+        JSONObject document=OriginalGlb.document(source);
+        int index=find(document.optJSONArray("materials"),materialName);
+        JSONObject material=document.getJSONArray("materials").getJSONObject(index);
+        if(!supported(material,index,animatedFactors(document))||animatedPbr(document,index))
+            throw new IOException("This material has unsupported extensions or animated PBR parameters");
+        try(RandomAccessFile input=new RandomAccessFile(source,"r")){
+            input.seek(12);
+            int size=Integer.reverseBytes(input.readInt());
+            if(size<2||size>MAX_JSON)throw new IOException("Invalid source GLB JSON chunk");
+            input.seek(20);
+            byte[] original=new byte[size];
+            input.readFully(original);
+            String text=StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(original)).toString();
+            JsonSpans json=new JsonSpans(text);
+            Span materials=json.member(json.value(0),"materials");
+            Span selected=json.element(materials,index);
+            if(!materialName.equals(json.string(json.member(selected,"name"))))
+                throw new IOException("Material selector changed during revision");
+            Span pbr=json.member(selected,PBR);
+            StringBuilder changed=new StringBuilder(text);
+            if(pbr==null){
+                json.insert(changed,selected,"\""+PBR+"\":{\"metallicFactor\":"+
+                        decimal(metallic)+",\"roughnessFactor\":"+decimal(roughness)+"}");
+            }else{
+                Span metal=json.member(pbr,"metallicFactor");
+                Span rough=json.member(pbr,"roughnessFactor");
+                StringBuilder additions=new StringBuilder();
+                if(metal==null)additions.append("\"metallicFactor\":").append(decimal(metallic));
+                if(rough==null){
+                    if(!additions.isEmpty())additions.append(',');
+                    additions.append("\"roughnessFactor\":").append(decimal(roughness));
+                }
+                // Insert at the PBR object's closing brace first so earlier token offsets
+                // for existing properties remain valid; then edit in descending order.
+                if(!additions.isEmpty())json.insert(changed,pbr,additions.toString());
+                if(metal!=null&&rough!=null){
+                    if(metal.start()>rough.start()){
+                        replaceNumber(changed,metal,metallic);
+                        replaceNumber(changed,rough,roughness);
+                    }else{
+                        replaceNumber(changed,rough,roughness);
+                        replaceNumber(changed,metal,metallic);
+                    }
+                }else if(metal!=null)replaceNumber(changed,metal,metallic);
+                else if(rough!=null)replaceNumber(changed,rough,roughness);
+            }
+            publish(input,changed.toString().getBytes(StandardCharsets.UTF_8),
+                    output.getAbsoluteFile().toPath());
+        }
+        return new FactorResult(index,materialName,metallic,roughness);
+    }
+
+    private static void replaceNumber(StringBuilder text,Span value,double desired) throws IOException {
+        String before=text.substring(value.start(),value.end());
+        try{
+            if(!unit(new BigDecimal(before).doubleValue()))
+                throw new IOException("Existing PBR factor exceeds the supported numeric range");
+        }catch(NumberFormatException invalid){
+            throw new IOException("Existing source PBR factor is not numeric",invalid);
+        }
+        text.replace(value.start(),value.end(),decimal(desired));
+    }
+
+    private static boolean animatedPbr(JSONObject document,int index) {
+        JSONArray animations=document.optJSONArray("animations");
+        if(animations==null)return false;
+        for(int i=0;i<animations.length();i++){
+            JSONObject motion=animations.optJSONObject(i);
+            JSONArray channels=motion==null?null:motion.optJSONArray("channels");
+            if(channels==null)continue;
+            for(int j=0;j<channels.length();j++){
+                JSONObject channel=channels.optJSONObject(j);
+                JSONObject target=channel==null?null:channel.optJSONObject("target");
+                JSONObject extensions=target==null?null:target.optJSONObject("extensions");
+                JSONObject pointer=extensions==null?null:extensions.optJSONObject("KHR_animation_pointer");
+                String path=pointer==null?"":pointer.optString("pointer");
+                if(path.equals("/materials")||path.equals("/materials/"+index))return true;
+                if(path.startsWith("/materials/"+index+"/pbrMetallicRoughness/")){
+                    String affected=path.substring(("/materials/"+index+"/pbrMetallicRoughness/").length());
+                    if(affected.startsWith("metallicFactor")||affected.startsWith("roughnessFactor"))
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static void publish(RandomAccessFile source, byte[] json, Path destination) throws Exception {
         int padding = (4 - json.length % 4) % 4;
         long remaining = source.length() - source.getFilePointer();

@@ -78,6 +78,32 @@ public final class OriginalMaterialVariantAcceptance {
                     || !json(Files.readAllBytes(output.toPath())).contains("\"baseColorFactor\":[1,0.75,0,1]")) {
                 throw new AssertionError("Absent PBR did not use the glTF default factor");
             }
+            File pbr=temp.resolve("pbr.glb").toFile();
+            OriginalMaterialVariant.FactorResult finish=
+                    OriginalMaterialVariant.writePbrFactors(source,pbr,"Hair A",0.75,0.25);
+            if(finish.materialIndex()!=0||finish.metallic()!=0.75||finish.roughness()!=0.25)
+                throw new AssertionError("Original PBR finish receipt differs from request");
+            String pbrText=json(Files.readAllBytes(pbr.toPath()));
+            if(!pbrText.contains("\"metallicFactor\":0.75")||
+                    !pbrText.contains("\"roughnessFactor\":0.25")||
+                    !pbrText.contains(FACTOR)||
+                    !Arrays.equals(binaryChunk(Files.readAllBytes(pbr.toPath())),binaryChunk(original)))
+                throw new AssertionError("PBR factors changed original material bindings or BIN");
+            OriginalGlb.document(pbr);
+            OriginalMaterialVariant.FactorResult inserted=
+                    OriginalMaterialVariant.writePbrFactors(source,pbr,"Default colour",0.2,0.7);
+            if(inserted.materialIndex()!=1||
+                    !json(Files.readAllBytes(pbr.toPath())).contains(
+                      "\"pbrMetallicRoughness\":{\"metallicFactor\":0.2,\"roughnessFactor\":0.7}"))
+                throw new AssertionError("Missing PBR layer was not inserted non-destructively");
+            reject(()->OriginalMaterialVariant.writePbrFactors(source,pbr,"Hair A",Double.NaN,0.5));
+            reject(()->OriginalMaterialVariant.writePbrFactors(source,pbr,"Hair A",0.2,1.5));
+            reject(()->OriginalMaterialVariant.writePbrFactors(source,pbr,"Duplicate",0.2,0.5));
+            reject(()->OriginalMaterialVariant.writePbrFactors(source,source,"Hair A",0.2,0.5));
+            reject(()->OriginalMaterialVariant.writePbrFactors(source,alias,"Hair A",0.2,0.5));
+            if(!Arrays.equals(original,Files.readAllBytes(source.toPath())))
+                throw new AssertionError("PBR editing modified an immutable source");
+            Files.deleteIfExists(pbr.toPath());
             System.out.println("OriginalMaterialVariantAcceptance passed exact JSON, BIN, alpha and source preservation");
         } finally {
             Files.deleteIfExists(alias.toPath());
