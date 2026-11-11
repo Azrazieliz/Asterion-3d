@@ -1,12 +1,21 @@
 # Asterion 3D Foundry
 
 Android production application for offline reference reconstruction,
-procedural generation and source preservation. The latest published APK is
-`0.2.0-native-depth`. The [full product scope](docs/SCOPE.md) remains open.
+procedural generation and source preservation. The newest signed development evaluation APK is
+`0.5.1-part-surfaces-recovery`. The [full product scope](docs/SCOPE.md) remains open.
 
-[Installable ARM64 APK](dist/AsterionFoundry-v0.2.0-DEV.apk) ·
+[Current signed ARM64 v0.5.1 APK](dist/AsterionFoundry-v0.5.1-PRODUCTION-DEV.apk) ·
+[Earlier v0.2 APK](dist/AsterionFoundry-v0.2.0-DEV.apk) ·
 [Reconstruction and model guide](docs/NATIVE_MODEL.md) ·
 [Verification evidence](docs/VERIFICATION.md)
+
+The [signed v0.5.1 development APK](dist/AsterionFoundry-v0.5.1-PRODUCTION-DEV.apk)
+adds non-destructive per-part colour revisions and foreground-reentry recovery of
+unexpectedly interrupted jobs. Windows signed-build checks, Android Java compilation,
+host regressions and exact signer continuity have passed. Samsung upgrade, real
+part-edit flow, reference fidelity, visual material acceptance and sustained
+offline performance **have not** been established; this is not the full release.
+See the [current evidence](docs/VERIFICATION.md).
 
 The [signed v0.5 staged-quality evaluation APK](dist/AsterionFoundry-v0.5.0-STAGED-EVALUATION.apk)
 has passed Windows compilation, host checks, APK signature and embedded model verification.
