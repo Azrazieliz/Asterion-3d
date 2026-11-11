@@ -343,7 +343,80 @@ void create(){
   if (matches == 0) label("No matching completed assets");
  }
  void startQueue(){try{startForegroundService(new Intent(this,ProductionService.class));}catch(Exception e){error(e);}}
- void projects(boolean queue)throws Exception{label(queue?"Stages reflect completed writes. Interrupted jobs keep their geometry checkpoints.":"Editable projects and export packages. Sources remain immutable.");if(queue){button("Run queued jobs",this::startQueue);button("Pause after current stage",()->{if(ProductionService.active)startService(new Intent(this,ProductionService.class).setAction("pause"));});}button("Refresh",()->show(page));ArrayList<JSONObject> jobs=store.jobs();if(jobs.isEmpty())label("No projects yet. Create an asset to begin.");for(JSONObject j:jobs){JSONObject q=new JSONObject(j.getString("request"));String id=j.getString("id"),state=j.getString("state");body.addView(text(q.getString("kind"),21,INK));label(state.toUpperCase(Locale.ROOT)+" · "+j.getString("message"));if(!q.optString("description").isEmpty())label(q.optString("description"));if(state.equals("paused")||state.equals("failed"))button("Resume "+id.substring(0,6),()->{store.state(id,"queued",j.optInt("stage"),"Resume requested");startQueue();show("Queue");});if(new File(store.project(id),"checkpoint.mesh").exists())button("Inspect asset",()->inspect(id));if(state.equals("complete")){if(originalGlbMode(q.optString("kind"))||ProductionService.MATERIAL_VARIANT.equals(q.optString("kind")))button("Inspect GLB receipt",()->inspect(id));button("Export editable package",()->{exportId=id;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/zip");i.putExtra(Intent.EXTRA_TITLE,"Foundry-"+id.substring(0,8)+".zip");startActivityForResult(i,2);});button("Repeat using saved recipe",()->{try{store.enqueue(q);startQueue();show("Queue");}catch(Exception e){error(e);}});}label("────────────────────────");}}
+ void projects(boolean queue)throws Exception{
+  section(queue?"Production queue":"Your projects",
+    queue?"Track active jobs, resume interrupted work, or pause safely at a checkpoint.":
+      "Every asset and revision is retained. Open a project to preview, edit or export.");
+  if(queue){
+   button("Run queued jobs",this::startQueue);
+   if(ProductionService.active)button("Pause after current stage",()->
+     startService(new Intent(this,ProductionService.class).setAction("pause")));
+  }
+  button("Refresh",()->show(page));
+  ArrayList<JSONObject> jobs=store.jobs();
+  if(jobs.isEmpty()){label("No projects yet. Choose Create to begin.");return;}
+  int shown=0;
+  for(JSONObject job:jobs){
+   JSONObject request=new JSONObject(job.getString("request"));
+   String id=job.getString("id"),state=job.getString("state");
+   String kind=request.optString("kind");
+   String name=request.optString("description");
+   if(name.isBlank())name=kind;
+   LinearLayout card=new LinearLayout(this);card.setOrientation(1);
+   card.setPadding(dp(15),dp(10),dp(15),dp(12));
+   GradientDrawable surface=new GradientDrawable();surface.setColor(PANEL);
+   surface.setCornerRadius(dp(16));surface.setStroke(dp(1),BORDER);
+   card.setBackground(surface);
+   LinearLayout.LayoutParams margin=new LinearLayout.LayoutParams(-1,-2);
+   margin.setMargins(0,dp(7),0,dp(7));
+   body.addView(card,margin);
+   TextView title=text(name,17,INK);
+   title.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+   card.addView(title);
+   int tone=switch(state){
+    case "complete" -> ACCENT;
+    case "candidate" -> 0xfff0c87a;
+    case "failed" -> 0xffff9b98;
+    case "running" -> 0xff8bbaff;
+    default -> MUTED;
+   };
+   String display=switch(state){
+    case "complete" -> "Export ready · visual quality unverified";
+    case "candidate" -> "Preview only · quality gate not passed";
+    case "running" -> "In progress";
+    case "queued" -> "Waiting in queue";
+    case "paused" -> "Paused · resumable";
+    case "failed" -> "Needs attention";
+    default -> state;
+   };
+   TextView badge=text(display,13,tone);
+   card.addView(badge);
+   card.addView(text(kind+" · "+id.substring(0,8),12,MUTED));
+   String message=job.optString("message");
+   if(!message.isBlank())card.addView(text(message,12,MUTED));
+   if(queue){
+    ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+    progress.setMax(4);progress.setProgress(Math.max(0,Math.min(4,job.optInt("stage"))));
+    card.addView(progress,new LinearLayout.LayoutParams(-1,dp(4)));
+   }
+   if(state.equals("paused")||state.equals("failed")){
+    buttonIn(card,"Resume job",()->{store.state(id,"queued",job.optInt("stage"),"Resume requested");startQueue();show("Queue");});
+   }
+   File project=store.project(id);
+   if(new File(project,"checkpoint.mesh").isFile()||new File(project,"receipt.json").isFile())
+    buttonIn(card,"Open asset",()->inspect(id));
+   if(state.equals("complete")){
+    buttonIn(card,"Export package",()->export(id));
+    buttonIn(card,"Repeat using saved settings",()->{
+     try{store.enqueue(new JSONObject(job.getString("request")));startQueue();show("Queue");}
+     catch(Exception e){error(e);}
+    });
+   }
+   shown++;
+  }
+  if(shown==0)label("No matching jobs");
+ }
+
  void inspect(String id) {
   try {
    if (preview != null) { preview.onPause(); preview = null; }
@@ -354,7 +427,8 @@ void create(){
     JSONObject input = new JSONObject(store.job(id).getString("request"));
     body.addView(text(ProductionService.MATERIAL_VARIANT.equals(input.getString("kind"))
             ? "Material variant receipt" : "Preserved source inventory",28,INK));
-    label(FilesUtil.readString(new File(directory,"receipt.json").toPath()));
+    label("Original source preserved. Open the technical report for source and material validation.");
+    button("Technical report",()->showTechnicalReport(new File(directory,"receipt.json")));
     if (originalGlbMode(input.getString("kind"))) {
      button("Create a material variant", () -> chooseOriginalMaterial(input.optString("source")));
     }
@@ -383,10 +457,19 @@ void create(){
    preview = new MeshView(this, mesh, new File(directory,"base-color.png"), motion);
    body.addView(preview,new LinearLayout.LayoutParams(-1,dp(330)));
    label("Drag to orbit · " + mesh.vertices.size()/3 + " triangles · " + mesh.bones.size() + " bones");
-   button("Front", () -> preview.view(0,0));
-   button("Right", () -> preview.view(-90,0));
-   button("Back", () -> preview.view(180,0));
-   button("Top", () -> preview.view(0,85));
+   LinearLayout views=new LinearLayout(this);
+   body.addView(views);
+   String[] orientations={"Front","Right","Back","Top"};
+   int[] yaw={0,-90,180,0},pitch={0,0,0,85};
+   for(int i=0;i<orientations.length;i++){
+    final int position=i;
+    Button viewButton=buttonIn(views,orientations[i],()->
+      preview.view(yaw[position],pitch[position]));
+    viewButton.setTextSize(12);viewButton.setGravity(Gravity.CENTER);
+    viewButton.setPadding(0,0,0,0);
+    LinearLayout.LayoutParams width=new LinearLayout.LayoutParams(0,dp(46),1);
+    width.setMargins(dp(2),dp(4),dp(2),dp(4));viewButton.setLayoutParams(width);
+   }
    if(mesh.parts().size()>1)button("Show or hide mesh parts",()->chooseVisibleParts(mesh));
    if (motion != null) {
     label(motion.name() + " · " + motion.durationSeconds() + " seconds");
@@ -404,12 +487,20 @@ void create(){
     motionPlaybackButton = button("Play animation", () -> motionPlaybackButton.setText(
             preview.toggleMotion() ? "Pause animation" : "Play animation"));
    }
+   if(complete)button("Export editable package",()->export(id));
+   LinearLayout editActions=new LinearLayout(this);
+   editActions.setOrientation(1);editActions.setVisibility(View.GONE);
+   body.addView(editActions);
+   button("Edit geometry, materials and animation",()->
+     editActions.setVisibility(editActions.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));
+   LinearLayout outerBody=body;
+   body=editActions;
    if (complete) {
     button("Create editable revision", () -> revisionDialog(id, request));
     button("Edit individual part colour", () -> { try { choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")); } catch (Exception failure) { error(failure); } });
     button("Edit individual part PBR finish", () -> { try { choosePartFinish(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
     button("Replace a separate mesh part", () -> { try { choosePartReplacement(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
-    button("Export editable package", () -> export(id));
+
     if (!mesh.bones.isEmpty()) {
      String baseSha = receipt.getString("editable_mesh_sha256");
      String formScope = FilesUtil.hash(id + "|" + baseSha);
@@ -447,12 +538,21 @@ void create(){
      } catch (Exception failure) { error(failure); }
     });
    }
+   body=outerBody;
    File receiptFile = new File(directory, "receipt.json");
-   if (receiptFile.isFile()) label(FilesUtil.readString(receiptFile.toPath()));
+   if (receiptFile.isFile())button("Technical validation details",()->showTechnicalReport(receiptFile));
    button("Back to projects", () -> show("Projects"));
   } catch (Exception failure) { error(failure); }
  }
 
+void showTechnicalReport(File file){
+  try{
+   new AlertDialog.Builder(this).setTitle("Engineering and validation report")
+     .setMessage(FilesUtil.readString(file.toPath()))
+     .setPositiveButton("Close",null).show();
+  }catch(Exception failure){error(failure);}
+ }
+ 
  private void chooseVisibleParts(Mesh mesh) {
   List<Mesh.Part> parts=mesh.parts();
   String[] names=new String[parts.size()];
