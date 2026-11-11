@@ -77,3 +77,8 @@ prepare checksum-pinned offline dependencies at build time. Use
 `scripts/build-windows.ps1` on the existing signing worker for an update
 compatible with the previously published APK. Run
 `bash scripts/test-core.sh` for the focused host geometry and GLB suite.
+
+
+### NoWorld-first output and optional 3D printing (development source)
+
+The primary export stays the editable GLB source package intended for NoWorld preparation (native Unreal admission still requires separate verification). An additional static STL option checks print geometry and exports millimetre-sized Z-up triangles, preserving the original game asset. Detached shells require an explicit separate-pieces selection; paper-thin wings, hair and supports are not yet approved for real printing. The owner-provided high-complexity sheet cases are tracked without publishing the originals in [the acceptance contract](docs/COMPLEX_REFERENCE_ACCEPTANCE.md). This is a source update, not a newly signed release.

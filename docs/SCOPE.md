@@ -64,3 +64,8 @@ The humanoid case must include completion of a cropped limb with coherent anatom
 ## Preservation rules
 
 Never delete original inputs or their only recoverable copy. Preserve licenses/provenance. Never replace exact source geometry with screenshots or templates without reporting the change. No new NoWorld identities, ownership, skeleton aliases, rest poses, missing morph deltas, facial transparency guesses or duplicated shared motion banks. Never claim Unreal acceptance from GLB validity. Never claim GPU/NPU acceleration from a renderer or device feature flag. No protected other-app memory management.
+
+
+## Additional owner-directed 3D printing derivative
+
+Preserve NoWorld game-ready editable/animated assets as the PRIMARY export target. Provide a separate offline 3D-printing derivative with physical unit conversion, conservative geometry QA, eventual wall/thickness/support/slicer workflows and physical print acceptance. The initial implemented binary STL path is geometry-only and cannot replace NoWorld or convey translucency, motion and colours. It rejects open, inverted, nonmanifold and degenerate topology; single-body printing requires one connected shell, while separate closed pieces require explicit consent. See [High-complexity reference acceptance](COMPLEX_REFERENCE_ACCEPTANCE.md) for owner images and quality limits.

@@ -117,3 +117,10 @@ Every family needs usable materials, original textures when available, UVs, norm
 | NoWorld handoff | Existing canonical validation receipt, native Unreal import/cook receipt where required, and an asset ready for the existing integration path. |
 
 Each result records the source revision, inputs and permissions, model and backend versions, APK version, device result, quality outcome, and any unresolved defect. Report engineering, device, visual and native-engine results separately.
+
+
+### Added quality gate: complex reference sheets and optional printing
+
+- Use the private CXR-01/02/03 images defined in [COMPLEX_REFERENCE_ACCEPTANCE.md](COMPLEX_REFERENCE_ACCEPTANCE.md) for measured multi-view, material, anatomy and animation acceptance, without committing the original imagery.
+- Keep exact NoWorld native export/admission as the main pipeline. Build printing as an independent static derivative, never stripping the canonical asset's rigs, source materials, morphs or motions.
+- Current code supports strict millimetre-scaled STL with full-edge topology/shell preflight; before print release add thickness, feature tolerance, support/hollowing/drain analysis, multi-part assembly validation, slicer acceptance and physical print QA. Colour-print formats such as 3MF remain future qualifications, not delivered features.

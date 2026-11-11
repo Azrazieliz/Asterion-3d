@@ -254,3 +254,12 @@ The final `scripts/pack_native_apk.py --verify` path now streams the signed pack
 ## 2026-11-11 — Exact-source PBR material factor revisions (source only)
 
 Original source GLBs can now be edited by selecting a **uniquely named material**, choosing metallic and roughness, and creating a new derivative GLB. Only the corresponding glTF numeric PBR factors change; the original buffer bytes, source material textures, rig, morph targets, animation and remaining JSON tokens are retained. Existing tint operations and saved requests keep their original behavior. Factor-range and animated-material restrictions reject unsafe revisions. Acceptance tests cover exact binary preservation and invalid factors. Source CI is separate from actual signed-phone testing and lighting/visual acceptance.
+
+
+## 2026-11-11 — Strict STL/complex-part regression cycle (source only)
+
+- Separate optional print geometry path with true millimetre dimensions, Z-up binary STL, watertightness, winding, shell connectivity and bounded 500k-triangle edge sorting. NoWorld GLB/rig/morph/material originals are unchanged.
+- Foreground Android export has a technical preflight, strict single-piece mode and explicit separate-closed-pieces mode. Slicer, thin walls, supports, colour and physical print readiness are deliberately **not** claimed.
+- Java host tests generate 12- and 63k-triangle actual STL files; an independent Python parser verifies triangle count, normals, orientation, closed edge pairing, volume, size and millimetre scaling. GitHub Actions run 43033343450 passed host and Android source compilation.
+- Added part representation capacity 256 and a 128-part / 288-material-map integration stress test. The initial stress fixture exposed invalid world-space UVs through the independent GLB validator, despite passing its local assertions. Correct per-part 0–1 UVs were assigned in a later correction; use the latest CI run to verify the corrected artifact before acceptance.
+- CXR-01/02/03 source file digests and visual constraints are recorded in [COMPLEX_REFERENCE_ACCEPTANCE.md](COMPLEX_REFERENCE_ACCEPTANCE.md). None has been run through actual phone image-to-3D and visually accepted. No new Windows-signed APK was produced, no native Unreal import/cook or physical printed object was verified.
