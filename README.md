@@ -27,6 +27,31 @@ and the [0.4 production evaluation](docs/PRODUCTION_EVALUATION.md) after that AP
 Volumetric character reconstruction remains a preview and has not passed visual
 acceptance.
 
+## Pending 0.5.2 source update — guided UI and APK-bundled models
+
+**No new APK has yet been signed or published.** The currently downloadable
+v0.5.1 development binary is unchanged.
+
+The source on `work/staged-production-quality-20261111` adds a simplified
+four-destination navigation shell (Create, Projects, Queue, Library), guided
+creation entry cards, readable job cards and statuses, expandable editing
+operations, compact preview viewpoints and technical reports behind explicit
+controls. Specialist Studio, Koikatsu and Performance screens remain accessible
+through Tools, and all previous creation methods remain in the app.
+
+The next signed build requires the full pinned TripoSR/ISNet/SlimSAM model archive
+embedded in the APK alongside the existing MiDaS/MoveNet weights. The phone no
+longer needs a separate model-pack installation; ONNX external data is prepared
+privately on first use. Windows builds require `FOUNDRY_MODEL_ARCHIVE` or
+`FOUNDRY_MODELS_DIR` pointing at the existing licensed pinned sources.
+The Android/Windows builds reject missing weights rather than publishing a
+partial APK. Model extraction adds on-device storage cost.
+
+Source compilation does **not** establish the premium UI on Samsung, complete
+image-to-3D quality, phone inference or production readiness. See
+[UI and bundled model acceptance](docs/UI_AND_BUNDLING.md) and
+[verification evidence](docs/VERIFICATION.md).
+
 ## Create and export
 
 - Select **AI depth relief** to estimate the visible surface from one

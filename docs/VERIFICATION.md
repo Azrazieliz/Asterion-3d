@@ -226,3 +226,16 @@ Development branch: `work/staged-production-quality-20261111`. These are **sourc
 The current ChatGPT tool connection could update the canonical GitHub repository and observe GitHub CI, but it did not expose direct Asterion Control Windows keyboard/mouse/phone-worker operations. Therefore no Windows signing job, PC browser input, correct-conversation verification or automatic next-message Send event was executed or asserted. Never represent this GitHub write path as an Asterion Control desktop automation cycle.
 
 **Next real production milestone:** Build the signed next APK with the authorized existing Windows worker (preserve the existing certificate and all published APKs), install and exercise the actual new part-finish/part-replacement flows on Samsung, inspect independent material response under real lighting, then continue M1 with separate per-part PBR texture maps (base colour, normal, metallic/roughness, opacity and emissive) and checkpoint-aware source-preserving texture edits. Measure actual visual fidelity separately from technical GLB checks. Coordinate worker focus/resources with the other project; do not silently fall back to shared PC input.
+
+
+## 2026-11-11 — Native UI simplification and strict model bundling (source only)
+
+Starting from the previous M1 checkpoint, the branch now includes:
+
+- `d53b25b2`: APK-owned first-use model extraction in the production service, replacing the visible manual ZIP install requirement.
+- `af4b26f0`: pinned six-member ONNX archive packaged by Windows/Gradle with an explicit full-model release gate; version code 7 is **source configuration only**.
+- `b8f6103d`, `cda0e071`, `23c6a1ac`, `e033bacd`: four-tab navigation, guided creation, readable job states, expandable editor, hidden developer evidence and removal of the old import callback.
+- `f23cd36d`: final signed-APK contents verification now checks the large embedded reconstruction archive in addition to existing MiDaS, MoveNet and JNI checks.
+- `cb361699`: hermetic build-policy tests cover missing, copied and tampered pinned model archives without downloading the 700 MB source pack in CI.
+
+**What was verified:** code was committed to the canonical branch; prior GitHub Actions source compilation and host regression jobs passed. The new model-pack contract tests have a GitHub CI run, but their result must be inspected separately. **What was not verified:** a new Windows signed APK, actual package size, model pack availability on the Windows worker, Android installation/first-use extraction, Samsung screenshot usability, offline inference quality, visual fidelity, and NoWorld native/Unreal import. The existing published v0.5.1 APK is unchanged. See [UI_AND_BUNDLING.md](UI_AND_BUNDLING.md) for the non-negotiable phone acceptance gate.
