@@ -122,11 +122,11 @@ void create(){
  void openCreator(String recipe){nextRecipe=recipe;show("Create");}
  void createForm() {
 
-  label("Offline production");
+  section("New asset","Selected workflow · completely offline production. Choose the source and options.");
   prompt = new EditText(this);
   prompt.setTextColor(INK);
   prompt.setHintTextColor(MUTED);
-  prompt.setHint("Project name or recipe description");
+  prompt.setHint("Describe your asset or name this project");
   body.addView(prompt);
   kind = new Spinner(this);
   kind.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, kinds));
@@ -134,13 +134,18 @@ void create(){
    kind.setSelection(Arrays.asList(kinds).indexOf(nextRecipe));
    nextRecipe = null;
   }
+  kind.setVisibility(View.GONE);
   body.addView(kind);
+  label("Selected workflow · "+kind.getSelectedItem());
+  button("Change workflow",()->new AlertDialog.Builder(this).setTitle("Choose production method")
+    .setItems(kinds,(dialog,index)->openCreator(kinds[index])).show());
+  section("Size","Metres for reconstruction, or a scale multiplier for templates.");
   scale = new EditText(this);
   scale.setText("1.0");
   scale.setTextColor(INK);
   scale.setInputType(8194);
   body.addView(scale);
-  label("Metres for reconstruction or image size. Multiplier for procedural recipes.");
+  
   LinearLayout inputs = new LinearLayout(this);
   inputs.setOrientation(1);
   body.addView(inputs);
@@ -188,8 +193,14 @@ void create(){
    }
    public void onNothingSelected(AdapterView<?> parent) {}
   });
-  button("Create", () -> submit(false));
-  button("Create with interruption checkpoint", () -> submit(true));
+  if(kind.getSelectedItemPosition()>=0)
+   kind.getOnItemSelectedListener().onItemSelected(kind,null,kind.getSelectedItemPosition(),0);
+  CheckBox checkpoint=new CheckBox(this);
+  checkpoint.setTextColor(MUTED);
+  checkpoint.setText("Advanced · pause after geometry checkpoint");
+  body.addView(checkpoint);
+  button("Start creation", () -> submit(checkpoint.isChecked()));
+  
  }
 
  private static boolean needsOriginal(String recipe) {
@@ -291,6 +302,20 @@ void create(){
   show("Queue");
  }
 
+ private void showFormPresets(){
+  try{
+   List<FormLibrary.Profile> profiles=new FormLibrary(store.root).available("");
+   String[] labels=new String[profiles.size()+1];
+   labels[0]="Create a new reusable form preset";
+   for(int i=0;i<profiles.size();i++)
+    labels[i+1]=profiles.get(i).name()+" · revision "+profiles.get(i).revision();
+   new AlertDialog.Builder(this).setTitle("Reusable form presets")
+    .setItems(labels,(dialog,index)->{
+     if(index==0)formEditor("",null);
+     else manageForm(profiles.get(index-1));
+    }).setNegativeButton("Close",null).show();
+  }catch(Exception e){error(e);}
+ }
  private void studio() {
   label("Character and creature");
   studioRecipe(HUMAN_REFERENCE);
@@ -314,11 +339,9 @@ void create(){
  }
 
  private void library() throws Exception {
+  section("Asset library","Search finished assets and manage source references.");
   button("Register reference and original GLB", () -> pick(21,"image/*"));
-  button("Save shared form rules", () -> formEditor("", null));
-  for (FormLibrary.Profile profile : new FormLibrary(store.root).available("")) {
-   button(profile.name() + " · rules v" + profile.revision(), () -> manageForm(profile));
-  }
+  button("Manage form presets",()->showFormPresets());
   EditText search = new EditText(this);
   search.setHint("Search completed assets");
   search.setSingleLine(true);
