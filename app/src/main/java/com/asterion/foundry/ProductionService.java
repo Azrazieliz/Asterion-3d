@@ -175,7 +175,8 @@ public final class ProductionService extends Service {
             signature.append('|').append(TriplaneMesh.PIPELINE_VERSION);
         }
         if (DEPTH.equals(kind)) signature.append("|depth-relief-v1|").append(MidasDepth.SHA256);
-        if (HULL.equals(kind)) signature.append('|').append(VisualHull.METHOD);
+        if (HULL.equals(kind)) signature.append('|').append(VisualHull.METHOD)
+                .append('|').append(HullRefinement.VERSION);
         if (PART_HULL.equals(kind)) signature.append('|').append(PartHull.METHOD);
         if (isRigTemplate(kind)) signature.append('|').append(SkinBlend.VERSION);
         if ("Humanoid with separate tunic".equals(kind)) signature.append('|').append(ClothDrape.VERSION);
@@ -235,6 +236,8 @@ public final class ProductionService extends Service {
         if (candidate == null) candidate = readCandidate(cache, cacheMetrics, cacheTexture, kind);
         boolean reused = candidate != null;
         if (!reused) candidate = generate(request, originals, directory, volumeWorkspace, id, base, partner);
+        if (HULL.equals(kind) && candidate.metrics.optBoolean("silhouette_gate_failed",false))
+            candidateOnly = true;
         if (candidate.texture != null) {
             FilesUtil.write(texture, candidate.texture);
             candidate.metrics.put("texture_sha256", FilesUtil.hash(texture));
@@ -669,15 +672,29 @@ public final class ProductionService extends Service {
                     .put("metric_depth", false));
         }
         if (HULL.equals(kind)) {
-            VisualHull.Result result = VisualHull.reconstruct(SourceFiles.view(files.get("front")),
-                    SourceFiles.view(files.get("right")),
+            HullRefinement.Outcome passes = HullRefinement.reconstruct(
+                    SourceFiles.view(files.get("front")),SourceFiles.view(files.get("right")),
                     files.containsKey("back") ? SourceFiles.view(files.get("back")) : null,
-                    scale, detail, this::check);
+                    scale,detail,this::check);
+            VisualHull.Result result = passes.chosen();
             JSONObject metrics = new JSONObject().put("method", "binary_silhouette_iou")
                     .put("front", result.frontIou()).put("right", result.rightIou())
                     .put("back", result.backIou() == null ? JSONObject.NULL : result.backIou())
                     .put("height_cells", result.resolution())
-                    .put("occupied_cells", result.occupied()).put("components_6", result.components());
+                    .put("occupied_cells", result.occupied()).put("components_6", result.components())
+                    .put("silhouette_gate_failed",!passes.passedSilhouetteGate())
+                    .put("reference_identity_fidelity","unverified")
+                    .put("refinement",new JSONObject()
+                        .put("method",HullRefinement.VERSION)
+                        .put("passes",passes.attempts())
+                        .put("initial_resolution",passes.coarse().resolution())
+                        .put("initial_silhouette_iou",passes.coarseScore())
+                        .put("refined_resolution",passes.refined()==null
+                            ? JSONObject.NULL : passes.refined().resolution())
+                        .put("refined_silhouette_iou",passes.refined()==null
+                            ? JSONObject.NULL : passes.refinedScore())
+                        .put("selected_refined",passes.promoted())
+                        .put("limitation","silhouette_only_not_texture_or_anatomy"));
             int size = (int) Math.sqrt(result.atlas().length);
             metrics.put("textured_triangles", result.texturedTriangles())
                     .put("texture_size", size).put("material", "projected_reference_base_color");
