@@ -152,6 +152,7 @@ public final class ProductionService extends Service {
         long start = SystemClock.elapsedRealtime();
         check();
         Map<String, File> originals = new SourceFiles(store.root).originals(request);
+        JSONObject cropEvidence=SourceFiles.verifiedCropEvidence(request,originals);
         if (ORIGINAL_GLB.equals(kind) || NOWORLD_GLB.equals(kind)) {
             preserveGlb(job, request, directory, originals, start);
             return;
@@ -320,6 +321,7 @@ public final class ProductionService extends Service {
                 .put("editable_mesh_sha256", FilesUtil.hash(checkpoint))
                 .put("source_sha256", sourceHashes.optString("source"))
                 .put("source_roles", sourceHashes)
+                .put("source_crop_provenance",cropEvidence)
                 .put("cache_key", key).put("reused", reused)
                 .put("duration_ms", SystemClock.elapsedRealtime() - start)
                 .put("thermal_status", getSystemService(PowerManager.class).getCurrentThermalStatus())

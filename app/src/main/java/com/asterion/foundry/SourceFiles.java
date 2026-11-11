@@ -66,7 +66,8 @@ final class SourceFiles {
 
     Map<String, File> originals(JSONObject request) throws Exception {
         Map<String, File> result = new LinkedHashMap<>();
-        for (String role : new String[]{"source", "reference", "front", "right", "back", "contract"}) {
+        for (String role : new String[]{"source", "reference", "front", "right", "back", "contract",
+                "source_original", "front_original", "right_original", "back_original"}) {
             String path = request.optString(role);
             if (path.isEmpty()) continue;
             File file = new File(path).getCanonicalFile();
@@ -149,6 +150,66 @@ final class SourceFiles {
             if(decoder!=null)decoder.recycle();
             png.delete();
         }
+    }
+
+    /**
+     * A selected crop must derive from the exact immutable source sheet in this
+     * request. Do not trust dimensions, file paths or claimed view identities.
+     */
+    static JSONObject verifiedCropEvidence(JSONObject request,Map<String,File> originals)throws Exception {
+        JSONObject submitted=request.optJSONObject("crop_provenance");
+        JSONObject verified=new JSONObject();
+        if(submitted==null){
+            for(String role:new String[]{"source","front","right","back"})
+                if(originals.containsKey(role+"_original"))
+                    throw new IOException("Original sheet exists without required crop provenance: "+role);
+            return verified;
+        }
+        if(submitted.length()>4)throw new IOException("Unexpected number of reference crops");
+        for(String role:new String[]{"source","front","right","back"}){
+            if(!submitted.has(role)){
+                if(originals.containsKey(role+"_original"))
+                    throw new IOException("Missing reference crop contract: "+role);
+                continue;
+            }
+            if(!originals.containsKey(role)||!originals.containsKey(role+"_original"))
+                throw new IOException("Crop missing exact source and source-sheet pairing: "+role);
+            JSONObject row=submitted.getJSONObject(role);
+            if(!ReferenceCrop.VERSION.equals(row.optString("schema"))
+                    || !originals.get(role).getName().equals(row.optString("crop_sha256"))
+                    || !originals.get(role+"_original").getName().equals(row.optString("original_sha256"))
+                    || !row.optBoolean("original_unchanged",false))
+                throw new IOException("Crop reference source hashes or schema mismatch: "+role);
+            File original=originals.get(role+"_original");
+            BitmapFactory.Options sourceInfo=new BitmapFactory.Options();
+            sourceInfo.inJustDecodeBounds=true;
+            BitmapFactory.decodeFile(original.getAbsolutePath(),sourceInfo);
+            int width=sourceInfo.outWidth,height=sourceInfo.outHeight;
+            if(width!=row.getInt("source_width")||height!=row.getInt("source_height"))
+                throw new IOException("Source-sheet dimensions have changed: "+role);
+            ReferenceCrop.Box box=new ReferenceCrop.Box(row.getInt("left"),row.getInt("top"),
+                    row.getInt("right"),row.getInt("bottom"));
+            box.requireInside(width,height);
+            BitmapFactory.Options derivedInfo=new BitmapFactory.Options();
+            derivedInfo.inJustDecodeBounds=true;
+            BitmapFactory.decodeFile(originals.get(role).getAbsolutePath(),derivedInfo);
+            if(derivedInfo.outWidth!=row.getInt("output_width")
+                    ||derivedInfo.outHeight!=row.getInt("output_height")
+                    ||derivedInfo.outWidth<ReferenceCrop.MIN_PIXELS
+                    ||derivedInfo.outHeight<ReferenceCrop.MIN_PIXELS
+                    ||derivedInfo.outWidth>box.width()
+                    ||derivedInfo.outHeight>box.height())
+                throw new IOException("Derived reference crop shape or size mismatch: "+role);
+            if((box.isFull(width,height)) != original.equals(originals.get(role)))
+                throw new IOException("Reference crop claims inconsistent source identity: "+role);
+            verified.put(role,row);
+        }
+        for(java.util.Iterator<String> keys=submitted.keys();keys.hasNext();){
+            String role=keys.next();
+            if(!role.equals("source")&&!role.equals("front")&&!role.equals("right")&&!role.equals("back"))
+                throw new IOException("Unrecognized reference-sheet view: "+role);
+        }
+        return verified;
     }
 
     record Raster(int[] pixels, int width, int height) {}
