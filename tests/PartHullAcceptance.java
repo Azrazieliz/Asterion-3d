@@ -50,6 +50,36 @@ public final class PartHullAcceptance {
                 new PartHull.Views(rectangle(60,42,58,6,22,gold),hoodViews.right(),null),1,64,()->{}));
         fail(()->PartHull.reconstruct(List.of(body),part->new PartHull.Views(bodyViews.front(),hoodViews.right(),null),1,64,()->{}));
 
+        // This covers the new atlas planner and physically distinct part
+        // geometry at the intended 32-part complexity ceiling.
+        java.util.ArrayList<PartHull.Part> groups=new java.util.ArrayList<>();
+        java.util.Map<String,PartHull.Views> groupViews=new java.util.HashMap<>();
+        for(int i=0;i<PartHull.MAX_PARTS;i++){
+            PartHull.Part part=new PartHull.Part("layer-"+i,"Independent layer "+i,
+                    i<6?"wing_membrane":i<14?"hair":i<22?"armor":"accessory");
+            groups.add(part);
+            int cx=(i%8)*8+1,cy=(i/8)*13+3;
+            int rgb=0xff000000|((13*i&255)<<16)|((67*i&255)<<8)|(103*i&255);
+            groupViews.put(part.id(),new PartHull.Views(
+                  rectangle(64,cx,cx+6,cy,cy+7,rgb),
+                  rectangle(64,cx,cx+6,cy,cy+7,rgb),null));
+        }
+        PartHull.Result complex=PartHull.reconstruct(groups,
+                part->groupViews.get(part.id()),1,16,()->{});
+        if(complex.mesh().parts().size()!=PartHull.MAX_PARTS
+                ||complex.width()!=2048||complex.height()!=4096
+                ||complex.parts().size()!=PartHull.MAX_PARTS)
+            throw new AssertionError("Complex layer atlas or identities truncated");
+        for(int i=0;i<PartHull.MAX_PARTS;i++){
+            if(!complex.mesh().parts().get(i).id().equals(groups.get(i).id()))
+                throw new AssertionError("A named wing/hair/armor layer was merged");
+        }
+        java.util.ArrayList<PartHull.Part> overflow=new java.util.ArrayList<>(groups);
+        overflow.add(new PartHull.Part("extra","Extra nonredundant wing","wing_membrane"));
+        fail(()->PartHull.reconstruct(overflow,part->groupViews.get(part.id()),1,16,()->{}));
+        System.out.println("Complex calibrated part hull: "+complex.mesh().parts().size()
+                +" distinct layers and "+complex.width()+" × "+complex.height()+" bounded atlas");
+
         File legacy=new File(output,"legacy-parts.mesh");
         try(DataOutputStream file=new DataOutputStream(new FileOutputStream(legacy))){
             file.writeInt(0x41463346);
