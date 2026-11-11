@@ -301,6 +301,7 @@ public final class MainActivity extends Activity {
    }
    if (complete) {
     button("Create editable revision", () -> revisionDialog(id, request));
+    button("Edit individual part colour", () -> choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")));
     button("Export editable package", () -> export(id));
     if (!mesh.bones.isEmpty()) {
      String baseSha = receipt.getString("editable_mesh_sha256");
@@ -558,6 +559,44 @@ public final class MainActivity extends Activity {
   entry.setText(value);
   fields.addView(entry);
   return entry;
+ }
+
+ private void choosePartSurface(String id, Mesh mesh, String parentHash) {
+  List<Mesh.Part> parts = mesh.parts();
+  String[] labels = parts.stream().map(part -> part.name() + " · " + part.role()).toArray(String[]::new);
+  new AlertDialog.Builder(this).setTitle("Select a separate mesh part")
+    .setItems(labels, (dialog, selected) ->
+        partSurfaceDialog(id, parentHash, parts.get(selected))).show();
+ }
+
+ private void partSurfaceDialog(String id, String parentHash, Mesh.Part part) {
+  LinearLayout fields = new LinearLayout(this);
+  fields.setOrientation(1);
+  fields.setPadding(dp(20),0,dp(20),0);
+  fields.addView(text("Only " + part.name() + " (" + part.id() + ") changes. Other parts, the rig, UVs and source textures remain intact.",14,INK));
+  EditText colour = formField(fields,"Target colour #RRGGBB","#FFFFFF");
+  EditText strength = formField(fields,"Blend strength (0.0–1.0)","1.0");
+  AlertDialog dialog = new AlertDialog.Builder(this)
+    .setTitle("Part surface revision")
+    .setView(fields).setNegativeButton("Cancel",null)
+    .setPositiveButton("Create separate revision",null).create();
+  dialog.setOnShowListener(ignored ->
+    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+      try {
+        String hex=colour.getText().toString().trim();
+        if(!hex.matches("#[0-9a-fA-F]{6}"))throw new IllegalArgumentException("Use a colour in #RRGGBB format");
+        float amount=Float.parseFloat(strength.getText().toString());
+        if(!Float.isFinite(amount)||amount<0||amount>1)throw new IllegalArgumentException("Strength must be from 0 to 1");
+        enqueue(new JSONObject().put("kind",ProductionService.PART_SURFACE)
+          .put("parent",id).put("parent_mesh_sha256",parentHash)
+          .put("part_id",part.id()).put("part_rgb",Color.parseColor(hex) & 0xffffff)
+          .put("part_strength",(double)amount)
+          .put("scale",1).put("detail",12)
+          .put("description",part.name() + " colour revision"));
+        dialog.dismiss();
+      }catch(Exception failure){error(failure);}
+    }));
+  dialog.show();
  }
 
  private void revisionDialog(String id, JSONObject original) {

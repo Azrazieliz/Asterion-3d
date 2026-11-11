@@ -32,6 +32,7 @@ public final class ProductionService extends Service {
     static final String HULL = "Multi-view reconstruction";
     static final String PART_HULL = "Calibrated part references";
     static final String REVISION = "Mesh revision";
+    static final String PART_SURFACE = "Edit part surface colour";
     static final String FORM = "Saved form variant";
     static final String MOTION = "Skeletal animation";
     static final String SKIN_BLEND = "Blend skin weights";
@@ -176,7 +177,7 @@ public final class ProductionService extends Service {
         if (isRigTemplate(kind)) signature.append('|').append(SkinBlend.VERSION);
         if ("Humanoid with separate tunic".equals(kind)) signature.append('|').append(ClothDrape.VERSION);
         if ("Articulated dragon".equals(kind)) signature.append("|dragon_anatomy_v1");
-        Base base = REVISION.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind)
+        Base base = REVISION.equals(kind) || PART_SURFACE.equals(kind) || FORM.equals(kind) || MOTION.equals(kind) || SKIN_BLEND.equals(kind)
                 || ASSEMBLY.equals(kind) ? base(request) : null;
         Base partner = ASSEMBLY.equals(kind) ? base(request.getString("partner"),request.getString("partner_mesh_sha256")) : null;
         if (base != null) {
@@ -184,6 +185,10 @@ public final class ProductionService extends Service {
                     .append('|').append(base.textureSha());
             switch (kind) {
                 case FORM -> signature.append('|').append(request.getJSONObject("form"));
+                case PART_SURFACE -> signature.append('|').append(PartSurface.VERSION)
+                        .append('|').append(request.getString("part_id"))
+                        .append('|').append(request.getInt("part_rgb"))
+                        .append('|').append(request.getDouble("part_strength"));
                 case MOTION -> signature.append('|').append(SkeletalMotion.VERSION).append('|')
                         .append(request.optString("motion_script", request.optString("motion_intent")));
                 case SKIN_BLEND -> signature.append('|').append(SkinBlend.VERSION);
@@ -293,6 +298,16 @@ public final class ProductionService extends Service {
         }
         if (base != null) {
             receipt.put("parent_mesh_sha256", request.getString("parent_mesh_sha256"));
+        }
+        if (PART_SURFACE.equals(kind)) {
+            receipt.put("part_surface_revision", new JSONObject()
+                    .put("part_id", request.getString("part_id"))
+                    .put("target_rgb", String.format(java.util.Locale.ROOT, "#%06X", request.getInt("part_rgb")))
+                    .put("strength", request.getDouble("part_strength"))
+                    .put("method", PartSurface.VERSION)
+                    .put("geometry_and_skin_unchanged", true)
+                    .put("source_texture_reused", base.texture() != null)
+                    .put("visual_fidelity", "unverified"));
         }
         if (FORM.equals(kind)) {
             receipt.put("form",request.getJSONObject("form"))
@@ -568,6 +583,16 @@ public final class ProductionService extends Service {
                     .put("cross_part_fit","unverified").put("hidden_geometry","inferred_by_space_carving");
             return new Candidate(result.mesh(),metrics,encodeAtlas(result.atlas(),result.width(),result.height()));
         }
+        if (PART_SURFACE.equals(kind)) {
+            Mesh recoloured = PartSurface.recolour(Mesh.load(base.mesh()),
+                    request.getString("part_id"), request.getInt("part_rgb"),
+                    (float) request.getDouble("part_strength"));
+            return new Candidate(recoloured, new JSONObject()
+                    .put("method", PartSurface.VERSION)
+                    .put("target_part", request.getString("part_id"))
+                    .put("source_texture_preserved", true)
+                    .put("geometry_edit", false), base.textureBytes());
+        }
         if (REVISION.equals(kind)) {
             JSONArray axes = request.getJSONArray("axes");
             return new Candidate(MeshRevision.apply(Mesh.load(base.mesh()), (float) axes.getDouble(0),
@@ -700,6 +725,7 @@ public final class ProductionService extends Service {
             case VOLUME -> "triposr_volume_surface_vertex_colour";
             case DEPTH -> "midas_relative_depth_relief_v1";
             case REVISION -> "non_destructive_mesh_revision";
+            case PART_SURFACE -> PartSurface.VERSION;
             case FORM -> "saved_form_rule_v1";
             case MOTION -> SkeletalMotion.VERSION;
             case SKIN_BLEND -> SkinBlend.VERSION;

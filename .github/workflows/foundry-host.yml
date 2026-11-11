@@ -1,0 +1,29 @@
+name: Foundry host regression
+
+on:
+  push:
+    branches:
+      - "work/staged-production-quality-20261111"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Fetch test-only JSON runtime
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            https://repo.maven.apache.org/maven2/org/json/json/20250107/json-20250107.jar \
+            -o /tmp/foundry-json.jar
+      - name: Run core, stage, part-surface and export regression suites
+        env:
+          FOUNDRY_JSON_JAR: /tmp/foundry-json.jar
+        run: bash scripts/test-core.sh
