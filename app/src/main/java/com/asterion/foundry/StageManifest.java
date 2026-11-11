@@ -52,7 +52,7 @@ final class StageManifest {
         return file;
     }
 
-    private static JSONObject dependencies(Map<String, String> data) throws IOException {
+    private static JSONObject dependencies(Map<String, String> data) throws Exception {
         JSONObject result = new JSONObject();
         for (Map.Entry<String, String> value : data.entrySet()) {
             if (!value.getKey().matches("[a-z][a-z0-9_.-]{0,63}")
@@ -131,14 +131,14 @@ final class StageManifest {
         for (String name : ORDER) if (stages.has(name)) verify(name);
     }
 
-    synchronized JSONObject summary() {
+    synchronized JSONObject summary() throws Exception {
         JSONObject result = new JSONObject().put("schema", SCHEMA).put("stages", new JSONObject(stages.toString()));
         result.put("visual_acceptance", "not_established");
         result.put("unreal_acceptance", false);
         return result;
     }
 
-    private void save() throws IOException {
+    private void save() throws Exception {
         FilesUtil.write(manifest, summary().toString(2));
     }
 }
