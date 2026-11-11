@@ -344,9 +344,24 @@ public final class ProductionService extends Service {
         if(!candidate.mesh.bones.isEmpty())receipt.put("rig_roots",candidate.mesh.bones.stream().filter(bone->bone.parent<0).count());
         if (candidate.texture != null) receipt.put("texture_sha256", candidate.metrics.getString("texture_sha256"));
         if (!finishes.isEmpty()) receipt.put("part_materials_sha256", FilesUtil.hash(materialLayer));
-        if (!textures.isEmpty())
+        if (!textures.isEmpty()) {
             receipt.put("part_texture_manifest_sha256",
                     FilesUtil.hash(new File(directory,PartTextureMaps.MANIFEST)));
+            JSONArray mapsEvidence=new JSONArray();
+            for(String mapKey:textures.keys()) {
+                String[] tuple=mapKey.split("\\t",2);
+                byte[] image=textures.get(tuple[0],tuple[1]);
+                mapsEvidence.put(new JSONObject()
+                    .put("part_id",tuple[0]).put("channel",tuple[1])
+                    .put("sha256",FilesUtil.hash(new File(directory,
+                            PartTextureMaps.filename(tuple[0],tuple[1]))))
+                    .put("width",PartTextureMaps.pngWidth(image))
+                    .put("height",PartTextureMaps.pngHeight(image))
+                    .put("bytes",image.length)
+                    .put("visual_material_accuracy","unverified"));
+            }
+            receipt.put("part_texture_maps",mapsEvidence);
+        }
         if (motionEvidence != null) receipt.put("motion",motionEvidence);
         if (VOLUME.equals(kind) && request.optBoolean("human_reference")) {
             stage(id, 3, "Checking source anatomy evidence");

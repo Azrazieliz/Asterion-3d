@@ -37,6 +37,12 @@ final class PartTextureMaps {
     boolean isEmpty() { return maps.isEmpty(); }
     int size() { return maps.size(); }
     Set<String> keys() { return new java.util.TreeSet<>(maps.keySet()); }
+    static int pngWidth(byte[] png) {
+        return ByteBuffer.wrap(png,16,4).order(ByteOrder.BIG_ENDIAN).getInt();
+    }
+    static int pngHeight(byte[] png) {
+        return ByteBuffer.wrap(png,20,4).order(ByteOrder.BIG_ENDIAN).getInt();
+    }
 
     static String filename(String id,String channel) {
         requireId(id);

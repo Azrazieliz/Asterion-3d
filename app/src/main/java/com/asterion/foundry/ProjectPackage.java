@@ -102,8 +102,12 @@ final class ProjectPackage {
                 Mesh.Part part=parts.get(i);
                 String path="parts/part-"+(i+1)+".glb";
                 Glb.write(mesh.extractPart(i),temporary,texture,motion,finishes.only(part.id()),maps.only(part.id()));
+                JSONArray channels=new JSONArray();
+                for(String channel:PartTextureMaps.CHANNELS)
+                    if(maps.get(part.id(),channel)!=null)channels.put(channel);
                 entries.put(new JSONObject().put("id",part.id()).put("name",part.name()).put("role",part.role())
-                        .put("file",path).put("sha256",FilesUtil.hash(temporary)));
+                        .put("file",path).put("sha256",FilesUtil.hash(temporary))
+                        .put("pbr_texture_channels",channels));
                 add(zip,path,temporary);
             }
         }finally{
