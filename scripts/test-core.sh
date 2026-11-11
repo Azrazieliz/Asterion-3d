@@ -2,8 +2,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p test-output/classes
-javac -d test-output/classes app/src/main/java/com/asterion/foundry/{FilesUtil,Mesh,Recipes,Glb,VisualHull,HullRefinement,MeshThumbnail,GeometryAudit,DepthRelief,MeshRevision,PartSurface,PartMaterials,PartTextureMaps,UvOverlapAudit,PartReplacement,FormLibrary,SkeletalMotion,ReferenceView,PoseEvidence,SkinBlend,ClothDrape,RigAssembly,DragonRig,PartHull}.java tests/{CoreAcceptance,HullRefinementAcceptance,MeshThumbnailAcceptance,PartSurfaceAcceptance,PartMaterialsAcceptance,PartTextureMapsAcceptance,UvOverlapAcceptance,PartReplacementAcceptance,FormAcceptance,MotionAcceptance,ReferenceViewAcceptance,PoseEvidenceAcceptance,SkinBlendAcceptance,ScenePartsAcceptance,DragonRigAcceptance,ChoreographyAcceptance,PartHullAcceptance}.java
+javac -d test-output/classes app/src/main/java/com/asterion/foundry/{FilesUtil,Mesh,Recipes,Glb,VisualHull,HullRefinement,MeshThumbnail,GeometryAudit,PrintExport,DepthRelief,MeshRevision,PartSurface,PartMaterials,PartTextureMaps,UvOverlapAudit,PartReplacement,FormLibrary,SkeletalMotion,ReferenceView,PoseEvidence,SkinBlend,ClothDrape,RigAssembly,DragonRig,PartHull}.java tests/{CoreAcceptance,PrintExportAcceptance,HullRefinementAcceptance,MeshThumbnailAcceptance,PartSurfaceAcceptance,PartMaterialsAcceptance,PartTextureMapsAcceptance,UvOverlapAcceptance,PartReplacementAcceptance,FormAcceptance,MotionAcceptance,ReferenceViewAcceptance,PoseEvidenceAcceptance,SkinBlendAcceptance,ScenePartsAcceptance,DragonRigAcceptance,ChoreographyAcceptance,PartHullAcceptance}.java
 java -cp test-output/classes CoreAcceptance
+java -cp test-output/classes com.asterion.foundry.PrintExportAcceptance
 java -cp test-output/classes com.asterion.foundry.HullRefinementAcceptance
 java -cp test-output/classes com.asterion.foundry.MeshThumbnailAcceptance
 java -cp test-output/classes com.asterion.foundry.PartSurfaceAcceptance
