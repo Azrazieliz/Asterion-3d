@@ -60,8 +60,9 @@ public final class PartTextureMapsAcceptance {
                 PartTextureMaps.load(temp,original,sha);
                 throw new AssertionError("Tampered saved map was accepted");
             }catch(java.io.IOException expected){}
-            reject(()->changed.change(original,second,"opacity",RGBA));
-            reject(()->changed.change(original,"missing","normal",RGBA));
+            final PartTextureMaps finalMaps=changed;
+            reject(()->finalMaps.change(original,second,"opacity",RGBA));
+            reject(()->finalMaps.change(original,"missing","normal",RGBA));
             System.out.println("PASS 4-channel per-part PNG maps, manifest, corrupt-source rejection, glTF export and immutable parent");
         }finally{
             cleanup(temp);
