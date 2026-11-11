@@ -101,7 +101,9 @@ final class StageManifest {
 
     private static boolean same(JSONObject left, JSONObject right) throws Exception {
         if (left.length() != right.length()) return false;
-        for (String key : left.keySet()) {
+        java.util.Iterator<String> keys = left.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
             if (!right.has(key) || !left.getString(key).equals(right.getString(key))) return false;
         }
         return true;
@@ -117,7 +119,9 @@ final class StageManifest {
         JSONObject item = stages.optJSONObject(name);
         if (item == null) throw new IOException("Stage checkpoint absent: " + name);
         JSONObject outputs = item.getJSONObject("files");
-        for (String filename : outputs.keySet()) {
+        java.util.Iterator<String> names = outputs.keys();
+        while (names.hasNext()) {
+            String filename = names.next();
             if (!FilesUtil.hash(output(filename)).equals(outputs.getString(filename)))
                 throw new IOException("Stage checkpoint checksum mismatch: " + filename);
         }
