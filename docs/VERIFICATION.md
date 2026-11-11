@@ -212,3 +212,17 @@ Remaining evidence:
   complete rig deformation, autonomous animation, source-exact Koikatsu
   conversion, NoWorld native/Unreal admission, sustained phone thermal/runtime
   and release-grade visual checks remain **unverified or incomplete**.
+
+
+## 2026-11-11 — Source-only M1 PBR and independent part replacement increments
+
+Development branch: \`work/staged-production-quality-20261111\`. These are **source commits after the signed v0.5.1 APK**. Do not attribute their features to the previously signed APK.
+
+1. Commit \`8f05499073ea5d48ccf34f1d49b98dff06520879\` adds durable versioned per-part metallic/roughness factors, independent PBR finish revisions, inheritance across derived projects, part-aware GLB and exported part GLBs, SHA-256-bound project/stage material records, and host regression coverage. Original mesh, texture and sibling part data are preserved. It does not add physically-based texture stacks or visual appearance validation. [GitHub Actions run 43021042181](https://github.com/Azrazieliz/Asterion-3d/actions/runs/43021042181): host-regressions **passed**, android-source-compile **passed**.
+2. Commit \`1a11e010282a7a7d15fc6733c01467885ac1bfc2\` adds one-part geometry transfer between completed editable projects with immutable donor provenance, matching part roles, exact joint hierarchy/rest pose, matching atlas SHA-256, and unchanged target part IDs and PBR layer. Incompatible donors fail rather than silently retargeting or reinterpreting UVs. [GitHub Actions run 43021825482](https://github.com/Azrazieliz/Asterion-3d/actions/runs/43021825482): host-regressions **passed**, android-source-compile **passed**. No automatic garment fit, deformation, collision, clipping or target appearance acceptance is asserted.
+
+**Limits / next gate:** GitHub Actions compiled Android Java sources and ran host fixtures. These CI jobs do **not** sign/install the APK, run inference on Samsung, verify visual outputs, benchmark thermals, perform true NoWorld/Unreal admission or establish full M1–M7 completion. The latest actually published and previously Windows-signed binary remains \`dist/AsterionFoundry-v0.5.1-PRODUCTION-DEV.apk\`.
+
+The current ChatGPT tool connection could update the canonical GitHub repository and observe GitHub CI, but it did not expose direct Asterion Control Windows keyboard/mouse/phone-worker operations. Therefore no Windows signing job, PC browser input, correct-conversation verification or automatic next-message Send event was executed or asserted. Never represent this GitHub write path as an Asterion Control desktop automation cycle.
+
+**Next real production milestone:** Build the signed next APK with the authorized existing Windows worker (preserve the existing certificate and all published APKs), install and exercise the actual new part-finish/part-replacement flows on Samsung, inspect independent material response under real lighting, then continue M1 with separate per-part PBR texture maps (base colour, normal, metallic/roughness, opacity and emissive) and checkpoint-aware source-preserving texture edits. Measure actual visual fidelity separately from technical GLB checks. Coordinate worker focus/resources with the other project; do not silently fall back to shared PC input.
