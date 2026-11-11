@@ -396,6 +396,29 @@ void create(){
    LinearLayout.LayoutParams margin=new LinearLayout.LayoutParams(-1,-2);
    margin.setMargins(0,dp(7),0,dp(7));
    body.addView(card,margin);
+   File previewPng=new File(store.project(id),"preview.png");
+   File proof=new File(store.project(id),"receipt.json");
+   if(previewPng.isFile()&&proof.isFile()){
+    try{
+     JSONObject evidence=new JSONObject(FilesUtil.readString(proof.toPath()));
+     if(evidence.has("thumbnail_sha256")
+        &&evidence.getString("thumbnail_sha256").equals(FilesUtil.hash(previewPng))){
+      android.graphics.BitmapFactory.Options options=new android.graphics.BitmapFactory.Options();
+      options.inSampleSize=2;
+      android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeFile(
+          previewPng.getAbsolutePath(),options);
+      if(bitmap!=null){
+       ImageView image=new ImageView(this);
+       image.setImageBitmap(bitmap);
+       image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+       image.setBackground(panelShape(RAISED,12));
+       image.setContentDescription("Geometry preview for "+name+"; not a validated material render");
+       LinearLayout.LayoutParams frame=new LinearLayout.LayoutParams(-1,dp(96));
+       frame.setMargins(0,dp(2),0,dp(5));card.addView(image,frame);
+      }
+     }
+    }catch(Exception ignored){ /* Malformed previews never replace project data. */ }
+   }
    TextView title=text(name,17,INK);
    title.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
    card.addView(title);

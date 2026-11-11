@@ -22,7 +22,7 @@ final class StageManifest {
     private static final String[] ORDER = {"geometry", "surface", "export"};
     private static final Set<String> ALLOWED_FILES = Set.of(
             "checkpoint.mesh", "reference-metrics.json", "base-color.png",
-            "asset.glb", "receipt.json", "import-manifest.json",
+            "asset.glb", "receipt.json", "import-manifest.json", "preview.png",
             "motion.foundry.txt", "part-materials.foundry", "part-textures.foundry");
     private final File directory;
     private final File manifest;

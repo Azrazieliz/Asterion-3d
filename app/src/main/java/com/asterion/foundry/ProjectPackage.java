@@ -50,6 +50,12 @@ final class ProjectPackage {
                 add(zip, name, new File(directory, name));
             }
             if (stageEvidence.isFile()) add(zip, "stage-manifest.json", stageEvidence);
+            if (receipt.has("thumbnail_sha256")) {
+                File preview = new File(directory,"preview.png");
+                if (!receipt.getString("thumbnail_sha256").equals(FilesUtil.hash(preview)))
+                    throw new IOException("Project thumbnail checksum mismatch");
+                add(zip,"preview.png",preview);
+            }
             if (receipt.has("texture_sha256")) {
                 File texture = new File(directory, "base-color.png");
                 if (!receipt.getString("texture_sha256").equals(FilesUtil.hash(texture))) {
