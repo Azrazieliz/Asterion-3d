@@ -6,12 +6,14 @@ public final class MainActivity extends Activity {
  static final String KNOWN = "Find registered original";
  static final String HUMAN_REFERENCE = "Character reference candidate";
  String bindingReference, handoffProfile, partBundle;
+ String printExportId;double printHeightMm=180;
  String pendingMapParent,pendingMapHash,pendingMapPart,pendingMapChannel;
  Button motionPlaybackButton;
  final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Humanoid with separate tunic","Quadruped template","Articulated dragon","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.PART_HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
  public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");partBundle=b.getString("partBundle");pendingMapParent=b.getString("pendingMapParent");
  pendingMapHash=b.getString("pendingMapHash");pendingMapPart=b.getString("pendingMapPart");
- pendingMapChannel=b.getString("pendingMapChannel");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
+ pendingMapChannel=b.getString("pendingMapChannel");printExportId=b.getString("printExportId");
+  printHeightMm=b.getDouble("printHeightMm",180);for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
  void label(String v){body.addView(text(v,14,MUTED));}
@@ -455,7 +457,7 @@ void create(){
    if(new File(project,"checkpoint.mesh").isFile()||new File(project,"receipt.json").isFile())
     buttonIn(card,"Open asset",()->inspect(id));
    if(state.equals("complete")){
-    buttonIn(card,"Export package",()->export(id));
+    buttonIn(card,"Export editable GLB package",()->export(id));
     buttonIn(card,"Repeat using saved settings",()->{
      try{store.enqueue(new JSONObject(job.getString("request")));startQueue();show("Queue");}
      catch(Exception e){error(e);}
@@ -541,7 +543,8 @@ void create(){
     JSONObject qualityEvidence=new JSONObject(FilesUtil.readString(qualityEvidenceFile.toPath()));
     renderQualitySummary(qualityEvidence);
    }
-   if(complete)button("Export editable package",()->export(id));
+   if(complete)button("Export editable GLB package · NoWorld workflow",()->export(id));
+   if(complete)button("3D printing · validate and export STL",()->choosePrintExport(id));
    if(complete&&receipt.has("part_texture_manifest_sha256"))
     button("Inspect saved PBR texture maps",()->inspectPartTextures(id,mesh,receipt));
    LinearLayout editActions=new LinearLayout(this);
@@ -669,6 +672,62 @@ void showTechnicalReport(File file){
   new AlertDialog.Builder(this).setTitle("Mesh parts")
     .setMultiChoiceItems(names,checked,(dialog,part,visible)->current.setPartVisible(part,visible))
     .setPositiveButton("Done",null).show();
+ }
+
+ private void choosePrintExport(String id) {
+  LinearLayout form=new LinearLayout(this);form.setOrientation(1);
+  form.setPadding(dp(18),dp(4),dp(18),dp(4));
+  form.addView(text("3D printing is a separate static-geometry export. "
+    +"NoWorld GLB, original meshes, skin, morphs and animations stay unchanged.",14,INK));
+  EditText heightField=formField(form,"Printed height in mm (10–600)",String.format(Locale.ROOT,
+      "%.0f",printHeightMm));
+  form.addView(text("Strict export rejects open, non-manifold, inverted and collapsed geometry. "
+    +"It does not yet generate support structures, min-wall thickness, drains, hollowing "
+    +"or colour prints. Fine hair, horns, layered wings and delicate details need "
+    +"physical engineering and a slicer review.",13,MUTED));
+  AlertDialog dialog=new AlertDialog.Builder(this)
+    .setTitle("3D print · geometry preflight")
+    .setView(form).setNegativeButton("Cancel",null)
+    .setPositiveButton("Validate mesh",null).create();
+  dialog.setOnShowListener(ignored ->
+    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(clicked -> {
+     try {
+      double height=Double.parseDouble(heightField.getText().toString().trim());
+      PrintExport.Options options=new PrintExport.Options(height);
+      dialog.dismiss();
+      Toast.makeText(this,"Checking complete geometry without changing the project",Toast.LENGTH_LONG).show();
+      new Thread(()->{
+       try {
+        if(!"complete".equals(store.job(id).getString("state")))
+          throw new IOException("Only completed editable projects can be sent to printing");
+        File folder=store.project(id),meshFile=new File(folder,"checkpoint.mesh");
+        JSONObject receipt=new JSONObject(FilesUtil.readString(new File(folder,"receipt.json").toPath()));
+        if(!FilesUtil.hash(meshFile).equals(receipt.getString("editable_mesh_sha256")))
+          throw new IOException("The saved print geometry failed its project checksum");
+        Mesh mesh=Mesh.load(meshFile);
+        PrintExport.Audit audit=PrintExport.inspect(mesh,options,()->{});
+        audit.requireGeometryGate();
+        runOnUiThread(()->new AlertDialog.Builder(this)
+          .setTitle("Technical geometry gate passed")
+          .setMessage(audit.summary()+"\n\nThis does not certify printability. "
+             +"Minimum walls, interpenetrations, trapped resin, support needs, "
+             +"and printer-specific limits remain unverified. Use a slicer and "
+             +"print a physical test for intricate models.")
+          .setNegativeButton("Cancel",null)
+          .setPositiveButton("Save STL", (d,which)->{
+            printExportId=id;
+            printHeightMm=height;
+            Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.setType("model/stl");
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.putExtra(Intent.EXTRA_TITLE,"Foundry-"+id.substring(0,8)+"-print.stl");
+            startActivityForResult(intent,26);
+          }).show());
+       } catch(Exception failure) {runOnUiThread(()->error(failure));}
+      },"FoundryPrintPreflight").start();
+     } catch(Exception failure) {error(failure);}
+    }));
+  dialog.show();
  }
 
  private void export(String id) {
@@ -1209,6 +1268,8 @@ void showTechnicalReport(File file){
   state.putString("bindingReference",bindingReference);
   state.putString("handoffProfile",handoffProfile);
   state.putString("partBundle",partBundle);
+  state.putString("printExportId",printExportId);
+  state.putDouble("printHeightMm",printHeightMm);
   state.putString("pendingMapParent",pendingMapParent);
   state.putString("pendingMapHash",pendingMapHash);
   state.putString("pendingMapPart",pendingMapPart);
