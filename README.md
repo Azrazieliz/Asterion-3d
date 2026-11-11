@@ -8,6 +8,11 @@ procedural generation and source preservation. The latest published APK is
 [Reconstruction and model guide](docs/NATIVE_MODEL.md) ·
 [Verification evidence](docs/VERIFICATION.md)
 
+The [signed v0.5 staged-quality evaluation APK](dist/AsterionFoundry-v0.5.0-STAGED-EVALUATION.apk)
+has passed Windows compilation, host checks, APK signature and embedded model verification.
+Its signing certificate matches the earlier v0.2 APK. Samsung installation and
+visual acceptance remain unverified. The full scope is **not** complete.
+
 The source on this branch adds [reference fidelity changes and verification](docs/REFERENCE_FIDELITY.md)
 and the [0.4 production evaluation](docs/PRODUCTION_EVALUATION.md) after that APK.
 Volumetric character reconstruction remains a preview and has not passed visual
