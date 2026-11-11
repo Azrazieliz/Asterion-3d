@@ -19,8 +19,8 @@ android {
         applicationId 'com.asterion.foundry'
         minSdk 29
         targetSdk 35
-        versionCode 4
-        versionName '0.4.0-production-evaluation'
+        versionCode 5
+        versionName '0.5.0-staged-evaluation'
         ndk { abiFilters 'arm64-v8a' }
     }
     compileOptions {
