@@ -514,6 +514,8 @@ void create(){
             preview.toggleMotion() ? "Pause animation" : "Play animation"));
    }
    if(complete)button("Export editable package",()->export(id));
+   if(complete&&receipt.has("part_texture_manifest_sha256"))
+    button("Inspect saved PBR texture maps",()->inspectPartTextures(id,mesh,receipt));
    LinearLayout editActions=new LinearLayout(this);
    editActions.setOrientation(1);editActions.setVisibility(View.GONE);
    body.addView(editActions);
@@ -795,6 +797,70 @@ void showTechnicalReport(File file){
   return entry;
  }
 
+
+ private void inspectPartTextures(String id,Mesh mesh,JSONObject receipt){
+  try{
+   PartTextureMaps maps=PartTextureMaps.load(store.project(id),mesh,
+      receipt.getString("part_texture_manifest_sha256"));
+   List<Mesh.Part> parts=new ArrayList<>();
+   List<String> names=new ArrayList<>();
+   for(Mesh.Part p:mesh.parts()){
+    int count=0;
+    for(String channel:PartTextureMaps.CHANNELS)
+     if(maps.get(p.id(),channel)!=null)count++;
+    if(count==0)continue;
+    parts.add(p);
+    names.add(p.name()+" · "+count+" texture"+(count==1?"":"s"));
+   }
+   if(parts.isEmpty())throw new IOException("No saved texture maps in this project");
+   new AlertDialog.Builder(this).setTitle("Project PBR textures")
+    .setItems(names.toArray(new String[0]),(dialog,index)->{
+     Mesh.Part part=parts.get(index);
+     List<String> choices=new ArrayList<>();
+     List<String> channels=new ArrayList<>();
+     for(String channel:PartTextureMaps.CHANNELS)
+      if(maps.get(part.id(),channel)!=null){
+       channels.add(channel);
+       choices.add(switch(channel){
+        case "base_color" -> "Base colour and alpha";
+        case "metallic_roughness" -> "Metallic and roughness";
+        case "normal" -> "Normal / surface relief";
+        default -> "Emission";
+       });
+      }
+     new AlertDialog.Builder(this).setTitle(part.name()+" textures")
+      .setItems(choices.toArray(new String[0]),(d,choice)->
+         previewPbrImage(part,channels.get(choice),maps.get(part.id(),channels.get(choice))))
+      .setNegativeButton("Close",null).show();
+    }).setNegativeButton("Close",null).show();
+  }catch(Exception failure){error(failure);}
+ }
+ private void previewPbrImage(Mesh.Part part,String channel,byte[] png){
+  try{
+   PartTextureMaps.validatePng(png);
+   android.graphics.BitmapFactory.Options opts=new android.graphics.BitmapFactory.Options();
+   opts.inJustDecodeBounds=true;
+   android.graphics.BitmapFactory.decodeByteArray(png,0,png.length,opts);
+   int max=Math.max(opts.outWidth,opts.outHeight);
+   if(max<=0)throw new IOException("PNG decoder rejected saved texture");
+   opts.inJustDecodeBounds=false;
+   opts.inSampleSize=1;
+   while(max/opts.inSampleSize>512)opts.inSampleSize*=2;
+   android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeByteArray(png,0,png.length,opts);
+   if(bitmap==null)throw new IOException("Saved map cannot be displayed");
+   LinearLayout contents=new LinearLayout(this);contents.setOrientation(1);
+   contents.setPadding(dp(20),dp(4),dp(20),dp(4));
+   ImageView image=new ImageView(this);
+   image.setImageBitmap(bitmap);
+   image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+   image.setContentDescription(part.name()+" "+channel+" texture");
+   contents.addView(image,new LinearLayout.LayoutParams(-1,dp(250)));
+   contents.addView(text(PartTextureMaps.pngWidth(png)+" × "+PartTextureMaps.pngHeight(png)
+       +" PNG · colour and material response require model preview validation",13,MUTED));
+   new AlertDialog.Builder(this).setTitle(part.name()+" · "+channel)
+    .setView(contents).setPositiveButton("Close",null).show();
+  }catch(Exception failure){error(failure);}
+ }
 
  private void choosePartTexture(String id,Mesh mesh,JSONObject receipt){
   List<Mesh.Part> parts=mesh.parts();
