@@ -980,7 +980,8 @@ void showTechnicalReport(File file){
   dialog.show();
  }
  void kk(){boolean installed;try{getPackageManager().getPackageInfo("com.asterion.kk.test",0);installed=true;}catch(Exception e){installed=false;}label(installed?"Existing Asterion KK installation detected and preserved.":"Existing KK package was not visible to this app.");label("Card preservation is available. Source-accurate mesh extraction, zipmod resolution and Android runtime IPC are NOT implemented. Cards contain parameters and dependency references; they are not self-contained geometry.");button("Preserve original character card",()->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/png");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,3);});label("No screenshot reconstruction is substituted for source data. No Windows plugin is executed by this app.");}
- void performance(){ActivityManager.MemoryInfo m=new ActivityManager.MemoryInfo();getSystemService(ActivityManager.class).getMemoryInfo(m);PowerManager pm=getSystemService(PowerManager.class);label(String.format(Locale.ROOT,"Available RAM: %.2f GiB\nFree app storage: %.2f GiB\nThermal status: %d\nWorker: %s",m.availMem/1073741824.0,store.root.getUsableSpace()/1073741824.0,pm.getCurrentThermalStatus(),ProductionService.active?"running":"idle"));label("Geometry: Android CPU / ART\nPreview: OpenGL ES GPU rendering\nVulkan compute: not implemented\nQNN inference: not implemented\nAI depth: bundled MiDaS small (native CPU)");label(store.memory());label("One worker · pause on severe thermal state, low RAM or low storage · immutable source cache · stage checkpoints. Android foreground-service time limits still apply. No control of other applications’ memory.");if (Build.VERSION.SDK_INT >= 30) {
+ void performance(){ActivityManager.MemoryInfo m=new ActivityManager.MemoryInfo();getSystemService(ActivityManager.class).getMemoryInfo(m);PowerManager pm=getSystemService(PowerManager.class);label(String.format(Locale.ROOT,"Available RAM: %.2f GiB\nFree app storage: %.2f GiB\nThermal status: %d\nWorker: %s",m.availMem/1073741824.0,store.root.getUsableSpace()/1073741824.0,pm.getCurrentThermalStatus(),ProductionService.active?"running":"idle"));label("Geometry: Android CPU / ART\nPreview: OpenGL ES GPU rendering\nVulkan compute: not implemented\nQNN inference: not implemented\nAI depth: bundled MiDaS small (native CPU)");label("Offline 3D models: "+(TripoModels.ready(store.root) ? "Prepared in private app storage" : "Bundled in APK · unpacked on first reconstruction"));
+   label(store.memory());label("One worker · pause on severe thermal state, low RAM or low storage · immutable source cache · stage checkpoints. Android foreground-service time limits still apply. No control of other applications’ memory.");if (Build.VERSION.SDK_INT >= 30) {
    label("Recent Foundry process exits");
    List<ApplicationExitInfo> exits = getSystemService(ActivityManager.class)
            .getHistoricalProcessExitReasons(getPackageName(),0,5);
@@ -1036,19 +1037,6 @@ void showTechnicalReport(File file){
        Toast.makeText(this,"Reference registered to original GLB",Toast.LENGTH_LONG).show();
       });
      }
-     return;
-    }
-    if (code == 20) {
-     try (InputStream input = getContentResolver().openInputStream(uri)) {
-      TripoModels.install(store.root,input);
-     }
-     runOnUiThread(() -> {
-      if ("Create".equals(page)) {
-       nextRecipe = HUMAN_REFERENCE.equals(kind.getSelectedItem()) ? HUMAN_REFERENCE : ProductionService.VOLUME;
-       show("Create");
-      }
-      Toast.makeText(this, "Verified 3D models installed", Toast.LENGTH_LONG).show();
-     });
      return;
     }
     if (code == 2) {
