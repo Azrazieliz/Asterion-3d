@@ -28,3 +28,12 @@ benchmarks.
 
 Model origin and architecture: [MiDaS Small conversion](https://huggingface.co/litert-community/MiDaS-small/blob/b6f24f361d9e1bce8f33e970aebcb9e5e2d1a12c/README.md).
 The APK carries the MiDaS MIT and LiteRT Apache license texts.
+
+
+## Fully embedded model packaging — 0.5.2 development
+
+The signed build must include the six existing pinned TripoSR, ISNet and SlimSAM ONNX weights as a ZIP_STORED `foundry-3d.foundrymodels` APK asset. The Windows worker supplies the existing verified source archive via `FOUNDRY_MODEL_ARCHIVE`, or the six exact original weights via `FOUNDRY_MODELS_DIR`; the builder checks byte lengths and SHA-256 for every member before packaging. MiDaS and MoveNet are already embedded and remain unchanged.
+
+Android reconstruction jobs extract the embedded archive once into private app data because ONNX external-data weights require local file paths. There is no model download, user import or post-install ZIP selection in the normal creation flow. Model extraction still uses device storage. Source-only CI compilation can omit the large weights, but Gradle APK packaging and the Windows signed-build script refuse an absent bundle.
+
+This is a source-level packaging change pending a signed Windows build and Samsung model extraction/inference test. It does not correct the currently documented visual reconstruction failures.

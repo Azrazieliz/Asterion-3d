@@ -9,8 +9,10 @@ $env:JAVA_HOME=$Java
 $env:PATH="$Java\bin;$env:PATH"
 $python='D:\Tools\Python311\python.exe'
 $native="$build\offline-native"
-& $python "$root\scripts\prepare_native.py" --stage $native
+& $python "$root\scripts\prepare_native.py" --stage $native --require-embedded-models
 if($LASTEXITCODE -ne 0){throw 'Pinned model/runtime preparation failed'}
+$bundle=Join-Path $native 'assets\foundry-3d.foundrymodels'
+if(-not (Test-Path $bundle) -or (Get-Item $bundle).Length -lt 600000000){throw 'Full embedded reconstruction archive missing'}
 $jars=@(Get-ChildItem "$native\jars" -Filter '*.jar' | ForEach-Object {$_.FullName})
 $classPath=(@($android)+$jars) -join ';'
 New-Item -ItemType Directory -Force -Path "$build\classes","$build\dex","$build\host","$root\dist" | Out-Null
@@ -46,7 +48,7 @@ if($LASTEXITCODE -ne 0){throw 'GLB validation failed'}
 Pop-Location
 & "$tools\aapt2.exe" compile --dir "$src\res" -o "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'Resources failed'}
-& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 6 --version-name '0.5.1-part-surfaces-recovery' -0 tflite -A "$native\assets" "$build\res.zip"
+& "$tools\aapt2.exe" link -o "$build\unsigned.apk" --manifest "$src\AndroidManifest.xml" -I $android --min-sdk-version 29 --target-sdk-version 35 --version-code 7 --version-name '0.5.2-premium-bundled-models' -0 tflite -0 foundrymodels -A "$native\assets" "$build\res.zip"
 if($LASTEXITCODE -ne 0){throw 'AAPT failed'}
 & "$Java\bin\jar.exe" --create --file "$build\classes.jar" -C "$build\classes" .
 if($LASTEXITCODE -ne 0){throw 'Class archive failed'}
@@ -56,7 +58,7 @@ if($LASTEXITCODE -ne 0){throw 'D8 failed'}
 if($LASTEXITCODE -ne 0){throw 'DEX insertion failed'}
 & "$tools\zipalign.exe" -f -P 16 4 "$build\unsigned.apk" "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Alignment failed'}
-$apk="$root\dist\AsterionFoundry-v0.5.1-PRODUCTION-DEV.apk"
+$apk="$root\dist\AsterionFoundry-v0.5.2-PRODUCTION-DEV.apk"
 & "$tools\apksigner.bat" sign --ks "$env:USERPROFILE\.android\debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out $apk "$build\aligned.apk"
 if($LASTEXITCODE -ne 0){throw 'Signature failed'}
 & "$tools\apksigner.bat" verify --verbose $apk

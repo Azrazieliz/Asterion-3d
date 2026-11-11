@@ -7,6 +7,8 @@ def python = providers.gradleProperty('foundryPython').orElse(
 tasks.register('prepareOfflineModel', Exec) {
     inputs.file(rootProject.file('scripts/prepare_native.py'))
     inputs.dir(rootProject.file('third-party'))
+    inputs.property('foundryModelArchive', System.getenv('FOUNDRY_MODEL_ARCHIVE') ?: '')
+    inputs.property('foundryModelsDir', System.getenv('FOUNDRY_MODELS_DIR') ?: '')
     outputs.dir(nativeStage)
     commandLine python.get(), rootProject.file('scripts/prepare_native.py'),
             '--stage', nativeStage.get().asFile
@@ -19,8 +21,8 @@ android {
         applicationId 'com.asterion.foundry'
         minSdk 29
         targetSdk 35
-        versionCode 6
-        versionName '0.5.1-part-surfaces-recovery'
+        versionCode 7
+        versionName '0.5.2-premium-bundled-models'
         ndk { abiFilters 'arm64-v8a' }
     }
     compileOptions {
@@ -29,7 +31,7 @@ android {
     }
     sourceSets.main.assets.srcDir(nativeStage.map { it.dir('assets') })
     sourceSets.main.jniLibs.srcDir(nativeStage.map { it.dir('jni') })
-    androidResources { noCompress += 'tflite' }
+    androidResources { noCompress += ['tflite', 'foundrymodels'] }
     packaging.jniLibs.useLegacyPackaging = false
 }
 dependencies {
@@ -38,3 +40,15 @@ dependencies {
             nativeStage.map { it.file('jars/onnxruntime-android-1.31.1.jar') })
 }
 tasks.named('preBuild').configure { dependsOn 'prepareOfflineModel' }
+
+// Compilation can proceed without the large fixture; APK packaging cannot.
+tasks.register('requireBundledReconstruction') {
+    dependsOn 'prepareOfflineModel'
+    doLast {
+        def model = nativeStage.get().asFile.toPath().resolve('assets/foundry-3d.foundrymodels').toFile()
+        if (!model.isFile() || model.length() < 600_000_000L)
+            throw new GradleException('Cannot package an APK without the full embedded reconstruction model archive')
+    }
+}
+tasks.matching { it.name == 'packageDebug' || it.name == 'packageRelease' }
+    .configureEach { dependsOn 'requireBundledReconstruction' }

@@ -1,11 +1,16 @@
 """Prepare the exact, offline Android model and runtime on a build machine."""
 import argparse
+import os
 import hashlib
 from pathlib import Path
 import shutil
 import tempfile
 import urllib.request
 import zipfile
+
+from create_tripo_pack import FILES as RECONSTRUCTION_FILES
+
+EMBEDDED_PACK = "foundry-3d.foundrymodels"
 
 MODEL = "midas_small_256_fp16.tflite"
 POSE_MODEL = "movenet_lightning_v4_fp16.tflite"
@@ -75,15 +80,69 @@ def obtain(cache, name):
         temporary.unlink(missing_ok=True)
 
 
+def verify_reconstruction_archive(path):
+    """Require the exact six approved models before including them in an APK."""
+    with zipfile.ZipFile(path) as archive:
+        members = archive.namelist()
+        if len(members) != len(RECONSTRUCTION_FILES) or set(members) != set(RECONSTRUCTION_FILES):
+            raise ValueError("Reconstruction archive has missing or unexpected model members")
+        for name, (expected_size, expected_sha) in RECONSTRUCTION_FILES.items():
+            item = archive.getinfo(name)
+            if item.file_size != expected_size or item.compress_type != zipfile.ZIP_STORED:
+                raise ValueError(f"Unexpected pinned model size or compression: {name}")
+            checksum = hashlib.sha256()
+            with archive.open(item) as source:
+                while chunk := source.read(1024 * 1024):
+                    checksum.update(chunk)
+            if checksum.hexdigest() != expected_sha:
+                raise ValueError(f"Pinned model checksum mismatch: {name}")
+
+
+def embed_reconstruction(stage, model_dir, model_archive, required):
+    destination = stage / "assets" / EMBEDDED_PACK
+    if model_archive:
+        source = Path(model_archive).expanduser().resolve()
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        verify_reconstruction_archive(source)
+        if source != destination:
+            shutil.copyfile(source, destination)
+        return True
+    if model_dir:
+        directory = Path(model_dir).expanduser().resolve()
+        for name, (size, sha256) in RECONSTRUCTION_FILES.items():
+            source = directory / name
+            if not source.is_file() or source.stat().st_size != size or digest(source) != sha256:
+                raise ValueError(f"Required pinned model missing or mismatched: {name}")
+        temporary = destination.with_suffix(".tmp")
+        try:
+            with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=False) as archive:
+                for name in RECONSTRUCTION_FILES:
+                    archive.write(directory / name, name)
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        verify_reconstruction_archive(destination)
+        return True
+    if required:
+        raise FileNotFoundError("Model bundle required: set FOUNDRY_MODEL_ARCHIVE or FOUNDRY_MODELS_DIR on the Windows build worker")
+    destination.unlink(missing_ok=True)
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", type=Path, required=True)
+    parser.add_argument("--model-dir", type=Path, default=os.environ.get("FOUNDRY_MODELS_DIR"))
+    parser.add_argument("--model-archive", type=Path, default=os.environ.get("FOUNDRY_MODEL_ARCHIVE"))
+    parser.add_argument("--require-embedded-models", action="store_true")
     args = parser.parse_args()
     stage = args.stage.resolve()
     cache = stage.parent / "downloads"
     cache.mkdir(parents=True, exist_ok=True)
     for folder in ("assets/licenses", "jni/arm64-v8a", "jars"):
         (stage / folder).mkdir(parents=True, exist_ok=True)
+    embedded = embed_reconstruction(stage, args.model_dir, args.model_archive, args.require_embedded_models)
     for name in (MODEL, POSE_MODEL):
         model = obtain(cache, name)
         with model.open("rb") as stream:
@@ -111,6 +170,7 @@ def main():
         shutil.copyfile(Path(__file__).resolve().parents[1] / "third-party" / name,
                         stage / "assets/licenses" / name)
     print(f"Prepared {MODEL}, {POSE_MODEL}, LiteRT and ONNX Runtime ARM64 with pinned SHA-256 hashes")
+    print("Verified full 3D model archive embedded" if embedded else "Source compilation only; APK packaging requires all models")
 
 
 if __name__ == "__main__":
