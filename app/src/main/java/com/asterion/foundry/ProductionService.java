@@ -3,6 +3,7 @@ package com.asterion.foundry;
 import android.app.*;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import java.io.ByteArrayOutputStream;
 import android.os.*;
 import java.io.File;
@@ -200,6 +201,7 @@ public final class ProductionService extends Service {
         File cacheMetrics = new File(store.root, "cache/" + key + ".json");
         File texture = new File(directory, "base-color.png");
         File cacheTexture = new File(store.root, "cache/" + key + ".png");
+        StageManifest stageManifest = new StageManifest(directory);
 
         stage(id, job.getInt("stage"), "Preparing geometry");
         Candidate candidate = readCandidate(checkpoint, checkpointMetrics, texture, kind);
@@ -212,6 +214,9 @@ public final class ProductionService extends Service {
         }
         FilesUtil.write(checkpointMetrics, candidate.metrics.toString(2));
         candidate.mesh.save(checkpoint);
+        stageManifest.publish("geometry", Map.of("production_key", key),
+                Map.of("checkpoint.mesh", checkpoint, "reference-metrics.json", checkpointMetrics),
+                SystemClock.elapsedRealtime() - start);
         stage(id, 1, "Geometry checkpoint saved");
         if (!reused || !cache.isFile()) {
             if (candidate.texture != null) FilesUtil.write(cacheTexture, candidate.texture);
@@ -222,7 +227,11 @@ public final class ProductionService extends Service {
             throw new Paused("Acceptance checkpoint saved. Resume to finish export.");
         }
 
-        stage(id, 2, "Auditing topology and writing GLB");
+        stage(id, 2, "Auditing surface, topology and writing GLB");
+        JSONObject surfaceEvidence = surfaceEvidence(candidate.mesh, candidate.texture);
+        stageManifest.publish("surface", Map.of("geometry_sha256", FilesUtil.hash(checkpoint)),
+                candidate.texture == null ? Map.of("reference-metrics.json", checkpointMetrics)
+                        : Map.of("base-color.png", texture), SystemClock.elapsedRealtime() - start);
         GeometryAudit.Result audit = PART_HULL.equals(kind) ? null : GeometryAudit.inspect(candidate.mesh, this::check);
         File asset = new File(directory, "asset.glb");
         JSONObject motionEvidence = null;
@@ -257,6 +266,9 @@ public final class ProductionService extends Service {
                 .put("unreal_import_executed", false).put("noworld_binding", "unbound")
                 .put("visual_quality", "UNVALIDATED")
                 .put("reference_metrics", candidate.metrics)
+                .put("surface_audit", surfaceEvidence)
+                .put("stage_manifest", "stage-manifest.json")
+                .put("stage_evidence", "technical_checks_only")
                 .put("production_method", method(kind))
                 .put("source_appearance_preserved", false)
                 .put("mobile_optimization", "not_validated")
@@ -298,10 +310,39 @@ public final class ProductionService extends Service {
                 .put("manifestation_id", JSONObject.NULL).put("native_acceptance", false)
                 .put("warnings", new JSONArray().put("NoWorld adapter has not admitted this asset"))
                 .toString(2));
+        stageManifest.publish("export", Map.of("geometry_sha256", FilesUtil.hash(checkpoint),
+                        "surface_sha256", FilesUtil.hash(candidate.texture == null ? checkpointMetrics : texture)),
+                Map.of("asset.glb", asset, "receipt.json", new File(directory, "receipt.json"),
+                        "import-manifest.json", new File(directory, "import-manifest.json")),
+                SystemClock.elapsedRealtime() - start);
+        stageManifest.verifyAll();
         if (candidateOnly) {
             store.finishCandidate(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
         } else {
             store.finish(id, kind, SystemClock.elapsedRealtime() - start, reused, receipt);
+        }
+    }
+
+    private static JSONObject surfaceEvidence(Mesh mesh, byte[] texture) throws Exception {
+        if (texture == null) return SurfaceAudit.inspect(mesh, null, 0, 0);
+        BitmapFactory.Options dimensions = new BitmapFactory.Options();
+        dimensions.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(texture, 0, texture.length, dimensions);
+        if (dimensions.outWidth <= 0 || dimensions.outHeight <= 0) {
+            throw new IOException("Saved base-colour image cannot be decoded");
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        while (dimensions.outWidth / options.inSampleSize > 512
+                || dimensions.outHeight / options.inSampleSize > 512) options.inSampleSize *= 2;
+        Bitmap bitmap = BitmapFactory.decodeByteArray(texture, 0, texture.length, options);
+        if (bitmap == null) throw new IOException("Saved base-colour image cannot be decoded");
+        try {
+            int width = bitmap.getWidth(), height = bitmap.getHeight();
+            int[] rgba = new int[width * height];
+            bitmap.getPixels(rgba, 0, width, 0, 0, width, height);
+            return SurfaceAudit.inspect(mesh, rgba, width, height);
+        } finally {
+            bitmap.recycle();
         }
     }
 
