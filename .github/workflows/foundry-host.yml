@@ -25,6 +25,18 @@ jobs:
             -o /tmp/foundry-json.jar
       - name: Test strict offline model-bundling contract without large fixture
         run: python3 -m unittest discover -s tests -p 'test_embedded_model_contract.py'
+      - name: Verify Windows signing and packaging script syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'scripts/build-windows.ps1'),
+            [ref] $tokens, [ref] $errors) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'Windows release script cannot be parsed'
+          }
       - name: Run core, stage, part-surface and export regression suites
         env:
           FOUNDRY_JSON_JAR: /tmp/foundry-json.jar
