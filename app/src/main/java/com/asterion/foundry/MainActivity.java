@@ -6,14 +6,15 @@ public final class MainActivity extends Activity {
  static final String KNOWN = "Find registered original";
  static final String HUMAN_REFERENCE = "Character reference candidate";
  String bindingReference, handoffProfile, partBundle;
- String printExportId;double printHeightMm=180;
+ String printExportId;double printHeightMm=180;boolean printSeparateClosedShells;
  String pendingMapParent,pendingMapHash,pendingMapPart,pendingMapChannel;
  Button motionPlaybackButton;
  final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Humanoid with separate tunic","Quadruped template","Articulated dragon","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.PART_HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
  public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");partBundle=b.getString("partBundle");pendingMapParent=b.getString("pendingMapParent");
  pendingMapHash=b.getString("pendingMapHash");pendingMapPart=b.getString("pendingMapPart");
  pendingMapChannel=b.getString("pendingMapChannel");printExportId=b.getString("printExportId");
-  printHeightMm=b.getDouble("printHeightMm",180);for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
+  printHeightMm=b.getDouble("printHeightMm",180);
+  printSeparateClosedShells=b.getBoolean("printSeparateClosedShells",false);for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
  void label(String v){body.addView(text(v,14,MUTED));}
@@ -681,6 +682,11 @@ void showTechnicalReport(File file){
     +"NoWorld GLB, original meshes, skin, morphs and animations stay unchanged.",14,INK));
   EditText heightField=formField(form,"Printed height in mm (10–600)",String.format(Locale.ROOT,
       "%.0f",printHeightMm));
+  CheckBox separateShells=new CheckBox(this);
+  separateShells.setTextColor(INK);
+  separateShells.setText("Print separate closed shells (requires assembly in slicer)");
+  separateShells.setChecked(printSeparateClosedShells);
+  form.addView(separateShells);
   form.addView(text("Strict export rejects open, non-manifold, inverted and collapsed geometry. "
     +"It does not yet generate support structures, min-wall thickness, drains, hollowing "
     +"or colour prints. Fine hair, horns, layered wings and delicate details need "
@@ -693,7 +699,7 @@ void showTechnicalReport(File file){
     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(clicked -> {
      try {
       double height=Double.parseDouble(heightField.getText().toString().trim());
-      PrintExport.Options options=new PrintExport.Options(height);
+      PrintExport.Options options=new PrintExport.Options(height,separateShells.isChecked());
       dialog.dismiss();
       Toast.makeText(this,"Checking complete geometry without changing the project",Toast.LENGTH_LONG).show();
       new Thread(()->{
@@ -717,6 +723,7 @@ void showTechnicalReport(File file){
           .setPositiveButton("Save STL", (d,which)->{
             printExportId=id;
             printHeightMm=height;
+            printSeparateClosedShells=options.allowSeparateClosedShells();
             Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.setType("model/stl");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -1270,6 +1277,7 @@ void showTechnicalReport(File file){
   state.putString("partBundle",partBundle);
   state.putString("printExportId",printExportId);
   state.putDouble("printHeightMm",printHeightMm);
+  state.putBoolean("printSeparateClosedShells",printSeparateClosedShells);
   state.putString("pendingMapParent",pendingMapParent);
   state.putString("pendingMapHash",pendingMapHash);
   state.putString("pendingMapPart",pendingMapPart);
@@ -1315,7 +1323,7 @@ void showTechnicalReport(File file){
     if (code == 26) {
      String project=printExportId;
      if(project==null)throw new IOException("3D printing source was not selected");
-     PrintExport.Options options=new PrintExport.Options(printHeightMm);
+     PrintExport.Options options=new PrintExport.Options(printHeightMm,printSeparateClosedShells);
      if(!"complete".equals(store.job(project).getString("state")))
       throw new IOException("Print project is no longer completed");
      File folder=store.project(project);
