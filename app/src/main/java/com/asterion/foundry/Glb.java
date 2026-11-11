@@ -10,13 +10,29 @@ public final class Glb {
   return write(m,out,png,motion,PartMaterials.empty());
  }
  public static SkeletalMotion.Validation write(Mesh m,File out,byte[] png,SkeletalMotion motion,PartMaterials finishes)throws Exception{
-  if(finishes==null)throw new IllegalArgumentException("Missing part material layer");
-  finishes.requireCompatible(m);
+  return write(m,out,png,motion,finishes,PartTextureMaps.empty());
+ }
+ public static SkeletalMotion.Validation write(Mesh m,File out,byte[] png,SkeletalMotion motion,
+                                               PartMaterials finishes,PartTextureMaps partMaps)throws Exception{
+  if(finishes==null||partMaps==null)throw new IllegalArgumentException("Missing PBR material or map layer");
+  finishes.requireCompatible(m);partMaps.requireCompatible(m);
   SkeletalMotion.Validation validation=null;
   if(motion==null)m.validate();else validation=motion.validate(m);
   List<SkeletalMotion.Track> tracks=motion==null?Collections.emptyList():motion.tracks();
   boolean skin=!m.bones.isEmpty();int n=m.vertices.size(),stride=skin?72:48,meshBytes=n*stride,boneBytes=skin?m.bones.size()*64:0;
-  int textureBytes=png==null?0:((png.length+3)&~3);
+  ArrayList<byte[]> images=new ArrayList<>();
+  Map<String,Integer> mapIndices=new HashMap<>();
+  int globalTexture=-1;
+  if(png!=null){globalTexture=images.size();images.add(png);}
+  for(Mesh.Part part:m.parts())for(String channel:PartTextureMaps.CHANNELS){
+   byte[] image=partMaps.get(part.id(),channel);
+   if(image==null)continue;
+   PartTextureMaps.validatePng(image);
+   mapIndices.put(part.id()+"\t"+channel,images.size());
+   images.add(image);
+  }
+  int textureBytes=0;
+  for(byte[] image:images)textureBytes+=((image.length+3)&~3);
   int motionOffset=meshBytes+boneBytes+textureBytes,motionBytes=0;
   for(SkeletalMotion.Track track:tracks)motionBytes+=4*track.times().length*(1+track.components());
   ByteBuffer bin=ByteBuffer.allocate(motionOffset+motionBytes).order(ByteOrder.LITTLE_ENDIAN);
@@ -28,13 +44,31 @@ public final class Glb {
    }
   }
   if(skin)for(Mesh.Bone b:m.bones)for(int i=0;i<16;i++)bin.putFloat(i==12?-b.x:i==13?-b.y:i==14?-b.z:(i==0||i==5||i==10||i==15)?1:0);
-  if(png!=null)bin.put(png);
+  for(byte[] image:images){
+   bin.put(image);
+   bin.position(bin.position()+((4-image.length%4)%4));
+  }
   bin.position(motionOffset);
   for(SkeletalMotion.Track track:tracks){
    for(float time:track.times())bin.putFloat(time);
    for(float[] value:track.values())for(float component:value)bin.putFloat(component);
   }
-  String textures=png==null?"":",\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":"+(skin?2:1)+",\"mimeType\":\"image/png\"}]";
+  StringBuilder textures=new StringBuilder();
+  int firstImageView=skin?2:1;
+  if(!images.isEmpty()){
+   textures.append(",\"textures\":[");
+   for(int i=0;i<images.size();i++){
+    if(i>0)textures.append(',');
+    textures.append("{\"source\":").append(i).append('}');
+   }
+   textures.append("],\"images\":[");
+   for(int i=0;i<images.size();i++){
+    if(i>0)textures.append(',');
+    textures.append("{\"bufferView\":").append(firstImageView+i)
+     .append(",\"mimeType\":\"image/png\"}");
+   }
+   textures.append(']');
+  }
   ArrayList<Integer> roots=new ArrayList<>();
   if(skin)for(int i=0;i<m.bones.size();i++)if(m.bones.get(i).parent==-1)roots.add(i+1);
   int sharedRoot=roots.size()>1?m.bones.size()+1:-1;
@@ -58,17 +92,38 @@ public final class Glb {
   }
   j.append("],\"materials\":[");
   for(int i=0;i<parts.size();i++){
-   if(i>0)j.append(',');Mesh.Part part=parts.get(i);
+   if(i>0)j.append(',');
+   Mesh.Part part=parts.get(i);
    boolean sheets=part.role().equals("wing_membrane")||part.role().equals("garment");
    PartMaterials.Finish finish=finishes.forPart(part);
+   int baseImage=mapIndices.getOrDefault(part.id()+"\tbase_color",globalTexture);
+   int roughnessImage=mapIndices.getOrDefault(part.id()+"\tmetallic_roughness",-1);
+   int normalImage=mapIndices.getOrDefault(part.id()+"\tnormal",-1);
+   int emissiveImage=mapIndices.getOrDefault(part.id()+"\temissive",-1);
+   boolean transparency=baseImage>=0 && PartTextureMaps.potentiallyTransparent(images.get(baseImage));
    j.append("{\"name\":").append(FilesUtil.quote(part.role().equals("surface")?"Vertex palette":part.name()))
-    .append(",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,1,1,1]").append(png==null?"":",\"baseColorTexture\":{\"index\":0}")
-    .append(",\"metallicFactor\":").append(finish.metallic()).append(",\"roughnessFactor\":").append(finish.roughness())
-    .append("},\"alphaMode\":\"OPAQUE\"").append(sheets?",\"doubleSided\":true":"").append('}');
+    .append(",\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,1,1,1]");
+   if(baseImage>=0)j.append(",\"baseColorTexture\":{\"index\":").append(baseImage).append('}');
+   if(roughnessImage>=0)j.append(",\"metallicRoughnessTexture\":{\"index\":").append(roughnessImage).append('}');
+   j.append(",\"metallicFactor\":").append(finish.metallic()).append(",\"roughnessFactor\":").append(finish.roughness()).append('}');
+   if(normalImage>=0)j.append(",\"normalTexture\":{\"index\":").append(normalImage).append('}');
+   if(emissiveImage>=0)j.append(",\"emissiveTexture\":{\"index\":").append(emissiveImage)
+     .append("},\"emissiveFactor\":[1,1,1]");
+   j.append(",\"alphaMode\":\"").append(transparency?"BLEND":"OPAQUE").append('"');
+   if(sheets)j.append(",\"doubleSided\":true");
+   j.append('}');
   }
-  j.append(']').append(textures).append(",\"buffers\":[{\"byteLength\":").append(bin.capacity()).append("}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":").append(meshBytes).append(",\"byteStride\":").append(stride).append(",\"target\":34962}");
-  if(skin)j.append(",{\"buffer\":0,\"byteOffset\":").append(meshBytes).append(",\"byteLength\":").append(boneBytes).append('}');
-  if(png!=null)j.append(",{\"buffer\":0,\"byteOffset\":").append(meshBytes+boneBytes).append(",\"byteLength\":").append(png.length).append('}');
+  j.append(']').append(textures).append(",\"buffers\":[{\"byteLength\":").append(bin.capacity())
+    .append("}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":").append(meshBytes)
+    .append(",\"byteStride\":").append(stride).append(",\"target\":34962}");
+  if(skin)j.append(",{\"buffer\":0,\"byteOffset\":").append(meshBytes)
+    .append(",\"byteLength\":").append(boneBytes).append('}');
+  int imageOffset=meshBytes+boneBytes;
+  for(byte[] image:images){
+   j.append(",{\"buffer\":0,\"byteOffset\":").append(imageOffset)
+    .append(",\"byteLength\":").append(image.length).append('}');
+   imageOffset+=((image.length+3)&~3);
+  }
   int offset=motionOffset;
   for(SkeletalMotion.Track track:tracks){
    int times=4*track.times().length,values=times*track.components();
@@ -84,7 +139,7 @@ public final class Glb {
    if(skin){j.append(',');access(j,0,off+48,5123,count,"VEC4");j.append(',');access(j,0,off+56,5126,count,"VEC4");}
   }
   if(skin){j.append(',');access(j,1,0,5126,m.bones.size(),"MAT4");}
-  int view=png==null?2:3;
+  int view=firstImageView+images.size();
   for(SkeletalMotion.Track track:tracks){
    float[] times=track.times();
    j.append(',');access(j,view++,0,5126,times.length,"SCALAR");
