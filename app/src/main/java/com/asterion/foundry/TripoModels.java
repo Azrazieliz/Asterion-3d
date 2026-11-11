@@ -1,5 +1,6 @@
 package com.asterion.foundry;
 
+import android.content.Context;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.util.zip.ZipInputStream;
 /** The model pack is a one-time local install. Files are pinned before promotion. */
 final class TripoModels {
     static final String VERSION = "triposr-q8-isnet-slimsam-048725e-v2";
+    static final String EMBEDDED_ASSET = "foundry-3d.foundrymodels";
     static final String ENCODER = "triplane_q8.onnx";
     static final String WEIGHTS = "triplane_q8.onnx.data";
     static final String DECODER = "decoder.onnx";
@@ -37,6 +39,17 @@ final class TripoModels {
             if (!file.isFile() || file.length() != member.bytes) return false;
         }
         return true;
+    }
+
+    /** APK-owned pinned weights are unpacked privately when an ONNX job needs file paths. */
+    static synchronized void ensureBundled(Context context, File root) throws Exception {
+        if (ready(root)) return;
+        try (InputStream archive = context.getAssets().open(
+                EMBEDDED_ASSET, android.content.res.AssetManager.ACCESS_STREAMING)) {
+            install(root, archive);
+        } catch (java.io.FileNotFoundException absent) {
+            throw new IOException("Offline reconstruction weights missing from this APK", absent);
+        }
     }
 
     static synchronized void install(File root, InputStream input) throws Exception {

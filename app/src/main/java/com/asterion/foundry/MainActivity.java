@@ -60,7 +60,7 @@ public final class MainActivity extends Activity {
       if (ProductionService.VOLUME.equals(selected) || HUMAN_REFERENCE.equals(selected)) {
        label("Local volumetric reconstruction candidate. Occluded geometry is inferred. Fidelity and rigging are unverified.");
        if (HUMAN_REFERENCE.equals(selected)) label("Check which human joints the reference supports. Low-confidence joints stay unobserved.");
-       if (!TripoModels.ready(store.root)) button("Install offline 3D model pack", () -> pick(20, "*/*"));
+       if (!TripoModels.ready(store.root)) label("All offline models are packaged and prepared automatically on first use.");
       }
       if (ProductionService.DEPTH.equals(selected)) {
        label("Bundled MiDaS estimates the visible surface. Output has a flat backing and relative depth.");
@@ -144,9 +144,7 @@ public final class MainActivity extends Activity {
      return;
     }
     if (KNOWN.equals(selected)) throw new IllegalArgumentException("No original is registered to this exact image");
-    if (!TripoModels.ready(store.root)) {
-     throw new IllegalArgumentException("Install the offline 3D model pack before reconstruction");
-    }
+     // The queue prepares bundled weights without user-supplied model ZIP files.
    }
    if (ProductionService.HULL.equals(selected)
            && (!references.containsKey("front") || !references.containsKey("right"))) {
