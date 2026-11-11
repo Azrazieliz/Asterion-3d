@@ -24,6 +24,19 @@ public final class ComplexPartScaleAcceptance {
                 source.box((i%16)*.16f,0,(i/16)*.16f,.12f,.15f,.10f,
                   new float[]{.2f,.6f,.8f},0);
             }
+            // Generated box() uses world-space placeholder planar UVs.
+            // Exercise the real glTF texture bindings with each independent part
+            // mapped to its own valid 0..1 local UV range instead of accepting
+            // invalid coordinates just because material JSON was emitted.
+            for(int part=0;part<source.parts().size();part++){
+                float localX=(part%16)*.16f;
+                for(int vertex=source.parts().get(part).firstVertex();
+                    vertex<source.partEnd(part);vertex++){
+                    float[] value=source.vertices.get(vertex);
+                    value[6]=Math.max(0,Math.min(1,0.5f+(value[0]-localX)/.12f));
+                    value[7]=Math.max(0,Math.min(1,0.5f+value[1]/.15f));
+                }
+            }
             source.validate();
             File original=new File(dir,"original.mesh");
             source.save(original);
