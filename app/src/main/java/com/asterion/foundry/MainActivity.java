@@ -6,9 +6,12 @@ public final class MainActivity extends Activity {
  static final String KNOWN = "Find registered original";
  static final String HUMAN_REFERENCE = "Character reference candidate";
  String bindingReference, handoffProfile, partBundle;
+ String pendingMapParent,pendingMapHash,pendingMapPart,pendingMapChannel;
  Button motionPlaybackButton;
  final String[] kinds={"Route from description","Sword","Pavilion","Tree","Terrain","Image silhouette","Humanoid template","Humanoid with separate tunic","Quadruped template","Articulated dragon","OBJ geometry",ProductionService.ORIGINAL_GLB,ProductionService.NOWORLD_GLB,ProductionService.HULL,ProductionService.PART_HULL,ProductionService.DEPTH,ProductionService.VOLUME,HUMAN_REFERENCE,KNOWN};
- public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");partBundle=b.getString("partBundle");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
+ public void onCreate(Bundle b){super.onCreate(b);store=new Store(this);if(b!=null){source=b.getString("source","");exportId=b.getString("exportId");bindingReference=b.getString("bindingReference");handoffProfile=b.getString("handoffProfile");partBundle=b.getString("partBundle");pendingMapParent=b.getString("pendingMapParent");
+ pendingMapHash=b.getString("pendingMapHash");pendingMapPart=b.getString("pendingMapPart");
+ pendingMapChannel=b.getString("pendingMapChannel");for(String role:new String[]{"front","right","back"})if(b.containsKey(role))references.put(role,b.getString(role));}int recovering=0;if(!ProductionService.active){store.recover();recovering=store.requeueInterrupted();}getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);show(recovering>0?"Queue":"Create");if(recovering>0)startQueue();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},8);}
  int dp(int n){return (int)(getResources().getDisplayMetrics().density*n);}
  TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(6),0,dp(6));return t;}
  void label(String v){body.addView(text(v,14,MUTED));}
@@ -522,6 +525,7 @@ void create(){
     button("Create editable revision", () -> revisionDialog(id, request));
     button("Edit individual part colour", () -> { try { choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")); } catch (Exception failure) { error(failure); } });
     button("Edit individual part PBR finish", () -> { try { choosePartFinish(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
+    button("Replace a part texture map", () -> choosePartTexture(id, mesh, receipt));
     button("Replace a separate mesh part", () -> { try { choosePartReplacement(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
 
     if (!mesh.bones.isEmpty()) {
@@ -792,6 +796,26 @@ void showTechnicalReport(File file){
  }
 
 
+ private void choosePartTexture(String id,Mesh mesh,JSONObject receipt){
+  List<Mesh.Part> parts=mesh.parts();
+  String[] names=parts.stream().map(p->p.name()+" · "+p.role()).toArray(String[]::new);
+  new AlertDialog.Builder(this).setTitle("Choose an editable part")
+    .setItems(names,(dialog,partIndex)->{
+     Mesh.Part part=parts.get(partIndex);
+     String[] titles={"Base colour / alpha","Normal / surface detail",
+        "Metallic and roughness","Emission / glow"};
+     new AlertDialog.Builder(this).setTitle("Texture for "+part.name())
+      .setMessage("Select a PNG up to 4096 px and 12 MiB. A new revision retains original geometry, rig, other textures and sibling parts. Visual fidelity still needs review.")
+      .setItems(titles,(pickDialog,index)->{
+       pendingMapParent=id;
+       pendingMapHash=receipt.optString("editable_mesh_sha256");
+       pendingMapPart=part.id();
+       pendingMapChannel=PartTextureMaps.CHANNELS[index];
+       pick(25,"image/png");
+      }).setNegativeButton("Cancel",null).show();
+    }).setNegativeButton("Cancel",null).show();
+ }
+
  private void choosePartFinish(String id, Mesh mesh, JSONObject receipt) throws Exception {
   File saved = receipt.has("part_materials_sha256")
       ? new File(store.project(id), PartMaterials.FILE) : null;
@@ -1007,6 +1031,10 @@ void showTechnicalReport(File file){
   state.putString("bindingReference",bindingReference);
   state.putString("handoffProfile",handoffProfile);
   state.putString("partBundle",partBundle);
+  state.putString("pendingMapParent",pendingMapParent);
+  state.putString("pendingMapHash",pendingMapHash);
+  state.putString("pendingMapPart",pendingMapPart);
+  state.putString("pendingMapChannel",pendingMapChannel);
   for (Map.Entry<String,String> entry : references.entrySet()) state.putString(entry.getKey(),entry.getValue());
  }
 
@@ -1047,12 +1075,27 @@ void showTechnicalReport(File file){
      runOnUiThread(() -> Toast.makeText(this,"Editable package exported",Toast.LENGTH_LONG).show());
      return;
     }
-    if (code != 1 && code != 3 && code != 23 && code != 24 && (code < 11 || code > 13)) return;
+    if (code != 1 && code != 3 && code != 23 && code != 24 && code != 25 && (code < 11 || code > 13)) return;
     File original;
     try (InputStream input = getContentResolver().openInputStream(uri)) {
      original = new SourceFiles(store.root).preserve(input);
     }
     runOnUiThread(() -> {
+     if (code == 25) {
+      try {
+       String parent=pendingMapParent,hash=pendingMapHash,part=pendingMapPart,channel=pendingMapChannel;
+       if(parent==null||hash==null||part==null||channel==null)
+        throw new IOException("Part texture selection was interrupted. Select the target again.");
+       pendingMapParent=null;pendingMapHash=null;pendingMapPart=null;pendingMapChannel=null;
+       enqueue(new JSONObject().put("kind",ProductionService.PART_TEXTURE)
+         .put("parent",parent).put("parent_mesh_sha256",hash)
+         .put("part_id",part).put("map_channel",channel)
+         .put("source",original.getAbsolutePath())
+         .put("scale",1).put("detail",12)
+         .put("description",part+" · "+channel+" texture revision"));
+      }catch(Exception failure){error(failure);}
+      return;
+     }
      if (code == 24) {
       partBundle=original.getAbsolutePath();
       Button control=(Button)body.findViewWithTag("part-bundle");
