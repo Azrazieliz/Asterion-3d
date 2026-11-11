@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p test-output/classes
-javac -d test-output/classes app/src/main/java/com/asterion/foundry/{FilesUtil,Mesh,Recipes,Glb,VisualHull,HullRefinement,MeshThumbnail,GeometryAudit,PrintExport,DepthRelief,MeshRevision,PartSurface,PartMaterials,PartTextureMaps,UvOverlapAudit,PartReplacement,FormLibrary,SkeletalMotion,ReferenceCrop,ReferenceView,PoseEvidence,SkinBlend,ClothDrape,RigAssembly,DragonRig,PartHull}.java tests/{CoreAcceptance,ComplexPartScaleAcceptance,PrintExportAcceptance,HullRefinementAcceptance,MeshThumbnailAcceptance,PartSurfaceAcceptance,PartMaterialsAcceptance,PartTextureMapsAcceptance,UvOverlapAcceptance,PartReplacementAcceptance,FormAcceptance,MotionAcceptance,ReferenceCropAcceptance,ReferenceViewAcceptance,PoseEvidenceAcceptance,SkinBlendAcceptance,ScenePartsAcceptance,DragonRigAcceptance,ChoreographyAcceptance,PartHullAcceptance}.java
+javac -d test-output/classes app/src/main/java/com/asterion/foundry/{FilesUtil,Mesh,Recipes,Glb,VisualHull,HullRefinement,MeshThumbnail,GeometryAudit,PrintExport,DepthRelief,MeshRevision,PartSurface,PartMaterials,PartTextureMaps,UvOverlapAudit,PartReplacement,FormLibrary,SkeletalMotion,ReferenceCrop,AssetStagePolicy,ReferenceView,PoseEvidence,SkinBlend,ClothDrape,RigAssembly,DragonRig,PartHull}.java tests/{CoreAcceptance,ComplexPartScaleAcceptance,PrintExportAcceptance,HullRefinementAcceptance,MeshThumbnailAcceptance,PartSurfaceAcceptance,PartMaterialsAcceptance,PartTextureMapsAcceptance,UvOverlapAcceptance,PartReplacementAcceptance,FormAcceptance,MotionAcceptance,ReferenceCropAcceptance,AssetStagePolicyAcceptance,ReferenceViewAcceptance,PoseEvidenceAcceptance,SkinBlendAcceptance,ScenePartsAcceptance,DragonRigAcceptance,ChoreographyAcceptance,PartHullAcceptance}.java
 java -cp test-output/classes CoreAcceptance
 java -cp test-output/classes com.asterion.foundry.ComplexPartScaleAcceptance
 java -cp test-output/classes com.asterion.foundry.PrintExportAcceptance
@@ -16,6 +16,7 @@ java -cp test-output/classes com.asterion.foundry.PartReplacementAcceptance
 java -cp test-output/classes com.asterion.foundry.FormAcceptance
 java -cp test-output/classes MotionAcceptance
 java -cp test-output/classes com.asterion.foundry.ReferenceCropAcceptance
+java -cp test-output/classes com.asterion.foundry.AssetStagePolicyAcceptance
 java -cp test-output/classes com.asterion.foundry.ReferenceViewAcceptance
 java -cp test-output/classes com.asterion.foundry.PoseEvidenceAcceptance
 java -cp test-output/classes com.asterion.foundry.SkinBlendAcceptance
