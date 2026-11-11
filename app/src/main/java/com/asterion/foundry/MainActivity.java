@@ -436,16 +436,17 @@ void create(){
   String query = filter.toLowerCase(Locale.ROOT);
   int matches = 0;
   for (JSONObject row : store.jobs()) {
-   if (!"complete".equals(row.getString("state"))) continue;
+   if (!AssetStagePolicy.editable(row.getString("state"))) continue;
    JSONObject request = new JSONObject(row.getString("request"));
    String name = request.optString("description");
    String recipe = request.getString("kind");
    if (!(name + " " + recipe).toLowerCase(Locale.ROOT).contains(query)) continue;
    String id = row.getString("id");
-   button(name.isEmpty() ? recipe : name + " · " + recipe, () -> inspect(id));
+   button((name.isEmpty() ? recipe : name + " · " + recipe)
+      +("candidate".equals(row.getString("state"))?" · draft":""), () -> inspect(id));
    matches++;
   }
-  if (matches == 0) label("No matching completed assets");
+  if (matches == 0) label("No matching assets or saved drafts");
  }
  void startQueue(){try{startForegroundService(new Intent(this,ProductionService.class));}catch(Exception e){error(e);}}
  void projects(boolean queue)throws Exception{
@@ -533,8 +534,8 @@ void create(){
    File project=store.project(id);
    if(new File(project,"checkpoint.mesh").isFile()||new File(project,"receipt.json").isFile())
     buttonIn(card,"Open asset",()->inspect(id));
-   if(state.equals("complete")){
-    buttonIn(card,"Export editable GLB package",()->export(id));
+   if(AssetStagePolicy.editable(state)){
+    buttonIn(card, "candidate".equals(state)?"Export editable draft ZIP":"Export editable GLB package",()->export(id));
     buttonIn(card,"Repeat using saved settings",()->{
      try{store.enqueue(new JSONObject(job.getString("request")));startQueue();show("Queue");}
      catch(Exception e){error(e);}
@@ -568,11 +569,12 @@ void create(){
    JSONObject row = store.job(id);
    JSONObject request = new JSONObject(row.getString("request"));
    boolean complete = "complete".equals(row.getString("state"));
-   JSONObject receipt = complete ? new JSONObject(FilesUtil.readString(
+   boolean editable=AssetStagePolicy.editable(row.getString("state"));
+   JSONObject receipt = editable ? new JSONObject(FilesUtil.readString(
            new File(directory,"receipt.json").toPath())) : null;
    SkeletalMotion motion = null;
    String motionScript = "";
-   if (complete && ProductionService.MOTION.equals(request.getString("kind"))) {
+   if (editable && ProductionService.MOTION.equals(request.getString("kind"))) {
     File script = new File(directory,"motion.foundry.txt");
     if (!receipt.getJSONObject("motion").getString("editable_script_sha256").equals(FilesUtil.hash(script))) {
      throw new IOException("Saved motion failed its checksum");
@@ -620,9 +622,10 @@ void create(){
     JSONObject qualityEvidence=new JSONObject(FilesUtil.readString(qualityEvidenceFile.toPath()));
     renderQualitySummary(qualityEvidence);
    }
-   if(complete)button("Export editable GLB package · NoWorld workflow",()->export(id));
-   if(complete)button("3D printing · validate and export STL",()->choosePrintExport(id));
-   if(complete&&receipt.has("part_texture_manifest_sha256"))
+   if(editable)button(complete?"Export editable GLB package · NoWorld workflow":
+        "Export editable draft ZIP · NoWorld not approved",()->export(id));
+   if(editable)button("3D printing · technical STL preflight",()->choosePrintExport(id));
+   if(editable&&receipt.has("part_texture_manifest_sha256"))
     button("Inspect saved PBR texture maps",()->inspectPartTextures(id,mesh,receipt));
    LinearLayout editActions=new LinearLayout(this);
    editActions.setOrientation(1);editActions.setVisibility(View.GONE);
@@ -631,7 +634,7 @@ void create(){
      editActions.setVisibility(editActions.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE));
    LinearLayout outerBody=body;
    body=editActions;
-   if (complete) {
+   if (editable) {
     button("Create editable revision", () -> revisionDialog(id, request));
     button("Edit individual part colour", () -> { try { choosePartSurface(id, mesh, receipt.getString("editable_mesh_sha256")); } catch (Exception failure) { error(failure); } });
     button("Edit individual part PBR finish", () -> { try { choosePartFinish(id, mesh, receipt); } catch (Exception failure) { error(failure); } });
@@ -780,8 +783,7 @@ void showTechnicalReport(File file){
       Toast.makeText(this,"Checking complete geometry without changing the project",Toast.LENGTH_LONG).show();
       new Thread(()->{
        try {
-        if(!"complete".equals(store.job(id).getString("state")))
-          throw new IOException("Only completed editable projects can be sent to printing");
+        AssetStagePolicy.requireEditable(store.job(id).getString("state"));
         File folder=store.project(id),meshFile=new File(folder,"checkpoint.mesh");
         JSONObject receipt=new JSONObject(FilesUtil.readString(new File(folder,"receipt.json").toPath()));
         if(!FilesUtil.hash(meshFile).equals(receipt.getString("editable_mesh_sha256")))
@@ -1402,8 +1404,7 @@ void showTechnicalReport(File file){
      String project=printExportId;
      if(project==null)throw new IOException("3D printing source was not selected");
      PrintExport.Options options=new PrintExport.Options(printHeightMm,printSeparateClosedShells);
-     if(!"complete".equals(store.job(project).getString("state")))
-      throw new IOException("Print project is no longer completed");
+     AssetStagePolicy.requireEditable(store.job(project).getString("state"));
      File folder=store.project(project);
      File meshFile=new File(folder,"checkpoint.mesh");
      JSONObject receipt=new JSONObject(FilesUtil.readString(new File(folder,"receipt.json").toPath()));
@@ -1430,7 +1431,7 @@ void showTechnicalReport(File file){
       if (output == null) throw new IOException("Cannot open the selected destination");
       ProjectPackage.write(store, exporting, output);
      }
-     runOnUiThread(() -> Toast.makeText(this,"Editable package exported",Toast.LENGTH_LONG).show());
+     runOnUiThread(() -> Toast.makeText(this,"Editable package exported; quality status retained",Toast.LENGTH_LONG).show());
      return;
     }
     if (code != 1 && code != 3 && code != 23 && code != 24 && code != 25 && (code < 11 || code > 13)) return;
