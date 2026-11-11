@@ -71,10 +71,36 @@ public final class StagePipelineAcceptance {
             } catch (IOException expected) {
                 // No stage output outside the project may be admitted.
             }
+            File mapsFolder = new File(root, PartTextureMaps.FOLDER);
+            Files.createDirectories(mapsFolder.toPath());
+            File map = new File(root, PartTextureMaps.filename("asset","normal"));
+            File materialManifest = new File(root, PartTextureMaps.MANIFEST);
+            FilesUtil.write(map, new byte[]{11,12,13});
+            FilesUtil.write(materialManifest, "fixture map receipt");
+            ledger.publish("surface", Map.of("geometry_sha256",FilesUtil.hash(meshFile)),
+                    Map.of(PartTextureMaps.MANIFEST,materialManifest,
+                            PartTextureMaps.filename("asset","normal"),map),4);
+            ledger.verify("surface");
+            FilesUtil.write(map,new byte[]{11,12,14});
+            try {
+                ledger.verify("surface");
+                throw new AssertionError("Tampered nested material map remained accepted");
+            } catch(IOException expected){
+                if(!expected.getMessage().contains("checksum"))throw expected;
+            }
+            try {
+                ledger.publish("surface", Map.of("geometry_sha256",FilesUtil.hash(meshFile)),
+                        Map.of("part-textures/../receipt.json",receipt),1);
+                throw new AssertionError("Unsafe nested material output was admitted");
+            } catch(IOException expected){}
             System.out.println("PASS stage evidence, safe outputs, reuse, invalidation, tamper detection and surface audit");
         } finally {
-            for (File child : root.listFiles()) Files.deleteIfExists(child.toPath());
+            for (File child : root.listFiles()) deleteRecursively(child);
             Files.deleteIfExists(root.toPath());
         }
+    }
+    private static void deleteRecursively(File file) throws Exception {
+        if(file.isDirectory())for(File child:file.listFiles())deleteRecursively(child);
+        Files.deleteIfExists(file.toPath());
     }
 }
