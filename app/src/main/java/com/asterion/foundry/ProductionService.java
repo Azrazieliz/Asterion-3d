@@ -308,6 +308,10 @@ public final class ProductionService extends Service {
         } else {
             Glb.write(candidate.mesh, asset, candidate.texture, null, finishes, textures);
         }
+        stage(id, 3, "Rendering geometry preview");
+        MeshThumbnail.Result miniature=MeshThumbnail.render(candidate.mesh,this::check);
+        File previewFile=new File(directory,"preview.png");
+        FilesUtil.write(previewFile,encodeAtlas(miniature.argb(),miniature.width(),miniature.height()));
         stage(id, 3, "Writing validation receipt");
         JSONObject receipt = new JSONObject(candidate.mesh.validate())
                 .put("schema", "asterion.foundry.receipt.v1")
@@ -324,6 +328,9 @@ public final class ProductionService extends Service {
                 .put("production_export_admitted", !candidateOnly)
                 .put("vulkan_compute", "not_implemented").put("qnn", "not_implemented")
                 .put("unreal_import_executed", false).put("noworld_binding", "unbound")
+                .put("thumbnail_sha256",FilesUtil.hash(previewFile))
+                .put("thumbnail_type","geometry_only_no_PBR_lighting")
+                .put("thumbnail_visible_pixels",miniature.visiblePixels())
                 .put("visual_quality", "UNVALIDATED")
                 .put("reference_metrics", candidate.metrics)
                 .put("surface_audit", surfaceEvidence)
@@ -437,6 +444,7 @@ public final class ProductionService extends Service {
                 FilesUtil.hash(new File(directory, PartTextureMaps.MANIFEST)));
         stageManifest.publish("export", exportInputs,
                 Map.of("asset.glb", asset, "receipt.json", new File(directory, "receipt.json"),
+                        "preview.png", previewFile,
                         "import-manifest.json", new File(directory, "import-manifest.json")),
                 SystemClock.elapsedRealtime() - start);
         stageManifest.verifyAll();
