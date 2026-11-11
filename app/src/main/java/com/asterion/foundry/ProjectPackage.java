@@ -18,7 +18,8 @@ final class ProjectPackage {
     static void write(Store store, String id, OutputStream output) throws Exception {
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
             JSONObject row = store.job(id);
-            if (!"complete".equals(row.getString("state"))) throw new IOException("Project is not complete");
+            String state=row.getString("state");
+            AssetStagePolicy.requireEditable(state);
             File directory = store.project(id);
             JSONObject request = new JSONObject(row.getString("request"));
             Map<String, File> originals = new SourceFiles(store.root).originals(request);
@@ -26,6 +27,7 @@ final class ProjectPackage {
                 request.put(role.getKey(), "sources/" + role.getValue().getName());
             }
             JSONObject receipt = new JSONObject(FilesUtil.readString(new File(directory, "receipt.json").toPath()));
+            AssetStagePolicy.requireExportReceipt(state,receipt.optString("outcome"));
             File asset = new File(directory, "asset.glb");
             if (!FilesUtil.hash(asset).equals(receipt.getString("asset_sha256"))) {
                 throw new IOException("Project asset checksum does not match its receipt");
@@ -35,6 +37,18 @@ final class ProjectPackage {
                     && !FilesUtil.hash(editable).equals(receipt.getString("editable_mesh_sha256"))) {
                 throw new IOException("Editable geometry checksum does not match its receipt");
             }
+            zip.putNextEntry(new ZipEntry("export-status.json"));
+            zip.write(new JSONObject()
+                    .put("schema","asterion.foundry.export-status.v1")
+                    .put("project_state",state)
+                    .put("label",AssetStagePolicy.exportLabel(state))
+                    .put("reference_quality_approved",false)
+                    .put("noworld_native_accepted",false)
+                    .put("unreal_import_executed",false)
+                    .put("production_export_admitted",
+                            "complete".equals(state)&&receipt.optBoolean("production_export_admitted",false))
+                    .toString(2).getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
             zip.putNextEntry(new ZipEntry("project.json"));
             zip.write(request.toString(2).getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
