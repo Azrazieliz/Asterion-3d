@@ -23,6 +23,8 @@ jobs:
           curl --fail --location --retry 3 --silent --show-error \
             https://repo.maven.apache.org/maven2/org/json/json/20250107/json-20250107.jar \
             -o /tmp/foundry-json.jar
+      - name: Test strict offline model-bundling contract without large fixture
+        run: python3 -m unittest discover -s tests -p 'test_embedded_model_contract.py'
       - name: Run core, stage, part-surface and export regression suites
         env:
           FOUNDRY_JSON_JAR: /tmp/foundry-json.jar

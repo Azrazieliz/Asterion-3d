@@ -11,6 +11,8 @@ $python='D:\Tools\Python311\python.exe'
 $native="$build\offline-native"
 & $python "$root\scripts\prepare_native.py" --stage $native --require-embedded-models
 if($LASTEXITCODE -ne 0){throw 'Pinned model/runtime preparation failed'}
+& $python "$root\tests\test_embedded_model_contract.py"
+if($LASTEXITCODE -ne 0){throw 'Pinned model archive contract tests failed'}
 $bundle=Join-Path $native 'assets\foundry-3d.foundrymodels'
 if(-not (Test-Path $bundle) -or (Get-Item $bundle).Length -lt 600000000){throw 'Full embedded reconstruction archive missing'}
 $jars=@(Get-ChildItem "$native\jars" -Filter '*.jar' | ForEach-Object {$_.FullName})
