@@ -3,11 +3,15 @@ import hashlib
 from pathlib import Path
 import sys
 import zipfile
-from prepare_native import FILES, MODEL, POSE_MODEL
+from prepare_native import FILES, MODEL, POSE_MODEL, EMBEDDED_PACK, RECONSTRUCTION_FILES
 
 if sys.argv[1] == "--verify":
     with zipfile.ZipFile(sys.argv[2]) as apk:
         assert apk.testzip() is None, "APK ZIP CRC failed"
+        model_archive = apk.getinfo("assets/" + EMBEDDED_PACK)
+        expected_weight_bytes = sum(meta[0] for meta in RECONSTRUCTION_FILES.values())
+        assert model_archive.compress_type == zipfile.ZIP_STORED, "Bundled reconstruction model ZIP must remain uncompressed"
+        assert expected_weight_bytes <= model_archive.file_size <= expected_weight_bytes + 16384, "Bundled reconstruction weight pack is missing or truncated"
         for name in (MODEL, POSE_MODEL):
             model = apk.getinfo("assets/" + name)
             assert model.compress_type == zipfile.ZIP_STORED, "Model needs a mappable APK entry"
@@ -21,7 +25,7 @@ if sys.argv[1] == "--verify":
             library = apk.getinfo("lib/arm64-v8a/" + name)
             assert library.compress_type == zipfile.ZIP_STORED and apk.read(library)[:4] == b"\x7fELF"
         assert "classes.dex" in apk.namelist()
-    print("Verified embedded model bytes and notices, ARM64 JNI, and APK integrity")
+    print("Verified all reconstruction weights are embedded, plus MiDaS, MoveNet, notices, ARM64 JNI and APK integrity")
 else:
     apk, dex, jni = map(Path, sys.argv[1:])
     with zipfile.ZipFile(apk, "a") as archive:
