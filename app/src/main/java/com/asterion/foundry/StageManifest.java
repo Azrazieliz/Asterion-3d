@@ -32,7 +32,7 @@ final class StageManifest {
         this.directory = directory.getCanonicalFile();
         this.manifest = new File(this.directory, "stage-manifest.json");
         if (manifest.isFile()) {
-            JSONObject document = new JSONObject(Files.readString(manifest.toPath()));
+            JSONObject document = new JSONObject(FilesUtil.readString(manifest.toPath()));
             if (!SCHEMA.equals(document.optString("schema")))
                 throw new IOException("Unsupported stage ledger schema");
             stages = document.getJSONObject("stages");

@@ -32,7 +32,7 @@ final class ReferenceRegistry {
             Files.createDirectories(root.toPath());
             File binding = new File(root, referenceSource.getName());
             if (binding.isFile()) {
-                String previous = Files.readString(binding.toPath(), StandardCharsets.US_ASCII).trim();
+                String previous = FilesUtil.readString(binding.toPath(), StandardCharsets.US_ASCII).trim();
                 if (!previous.equals(assetSource.getName())) {
                     throw new IOException("This reference already has a different original");
                 }
@@ -48,6 +48,6 @@ final class ReferenceRegistry {
         if (!binding.isFile()) return null;
         original(referenceSha);
         if (binding.length() != 65) throw new IOException("Reference binding is damaged");
-        return original(Files.readString(binding.toPath(), StandardCharsets.US_ASCII).trim());
+        return original(FilesUtil.readString(binding.toPath(), StandardCharsets.US_ASCII).trim());
     }
 }

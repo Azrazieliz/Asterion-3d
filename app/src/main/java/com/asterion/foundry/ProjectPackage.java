@@ -25,7 +25,7 @@ final class ProjectPackage {
             for (Map.Entry<String, File> role : originals.entrySet()) {
                 request.put(role.getKey(), "sources/" + role.getValue().getName());
             }
-            JSONObject receipt = new JSONObject(Files.readString(new File(directory, "receipt.json").toPath()));
+            JSONObject receipt = new JSONObject(FilesUtil.readString(new File(directory, "receipt.json").toPath()));
             File asset = new File(directory, "asset.glb");
             if (!FilesUtil.hash(asset).equals(receipt.getString("asset_sha256"))) {
                 throw new IOException("Project asset checksum does not match its receipt");
@@ -75,7 +75,7 @@ final class ProjectPackage {
     private static void writeParts(ZipOutputStream zip,File root,File directory,File editable,JSONObject receipt) throws Exception {
         Mesh mesh=Mesh.load(editable);
         byte[] texture=receipt.has("texture_sha256")?Files.readAllBytes(new File(directory,"base-color.png").toPath()):null;
-        SkeletalMotion motion=receipt.has("motion")?SkeletalMotion.parse(mesh,Files.readString(new File(directory,"motion.foundry.txt").toPath())):null;
+        SkeletalMotion motion=receipt.has("motion")?SkeletalMotion.parse(mesh,FilesUtil.readString(new File(directory,"motion.foundry.txt").toPath())):null;
         JSONArray entries=new JSONArray();
         File temporary=File.createTempFile("part-export-",".glb",new File(root,"cache"));
         try{

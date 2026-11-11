@@ -249,7 +249,7 @@ public final class MainActivity extends Activity {
     JSONObject input = new JSONObject(store.job(id).getString("request"));
     body.addView(text(ProductionService.MATERIAL_VARIANT.equals(input.getString("kind"))
             ? "Material variant receipt" : "Preserved source inventory",28,INK));
-    label(java.nio.file.Files.readString(new File(directory,"receipt.json").toPath()));
+    label(FilesUtil.readString(new File(directory,"receipt.json").toPath()));
     if (originalGlbMode(input.getString("kind"))) {
      button("Create a material variant", () -> chooseOriginalMaterial(input.optString("source")));
     }
@@ -261,7 +261,7 @@ public final class MainActivity extends Activity {
    JSONObject row = store.job(id);
    JSONObject request = new JSONObject(row.getString("request"));
    boolean complete = "complete".equals(row.getString("state"));
-   JSONObject receipt = complete ? new JSONObject(java.nio.file.Files.readString(
+   JSONObject receipt = complete ? new JSONObject(FilesUtil.readString(
            new File(directory,"receipt.json").toPath())) : null;
    SkeletalMotion motion = null;
    String motionScript = "";
@@ -270,7 +270,7 @@ public final class MainActivity extends Activity {
     if (!receipt.getJSONObject("motion").getString("editable_script_sha256").equals(FilesUtil.hash(script))) {
      throw new IOException("Saved motion failed its checksum");
     }
-    motionScript = java.nio.file.Files.readString(script.toPath());
+    motionScript = FilesUtil.readString(script.toPath());
     motion = SkeletalMotion.parse(mesh,motionScript);
    }
    body.removeAllViews();
@@ -341,7 +341,7 @@ public final class MainActivity extends Activity {
     });
    }
    File receiptFile = new File(directory, "receipt.json");
-   if (receiptFile.isFile()) label(java.nio.file.Files.readString(receiptFile.toPath()));
+   if (receiptFile.isFile()) label(FilesUtil.readString(receiptFile.toPath()));
    button("Back to projects", () -> show("Projects"));
   } catch (Exception failure) { error(failure); }
  }
@@ -496,7 +496,7 @@ public final class MainActivity extends Activity {
     if(ProductionService.ASSEMBLY.equals(request.getString("kind")))continue;
     File receiptFile=new File(store.project(candidate),"receipt.json");
     if(!receiptFile.isFile())continue;
-    JSONObject proof=new JSONObject(java.nio.file.Files.readString(receiptFile.toPath()));
+    JSONObject proof=new JSONObject(FilesUtil.readString(receiptFile.toPath()));
     if(proof.optInt("bones")<1||proof.optInt("rig_roots",1)!=1||proof.has("texture_sha256"))continue;
     String checksum=proof.optString("editable_mesh_sha256");
     if(checksum.isEmpty())continue;

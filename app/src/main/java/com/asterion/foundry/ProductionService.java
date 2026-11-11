@@ -480,7 +480,7 @@ public final class ProductionService extends Service {
         }
         File directory = store.project(parent);
         File mesh = new File(directory,"checkpoint.mesh");
-        JSONObject receipt = new JSONObject(Files.readString(new File(directory,"receipt.json").toPath()));
+        JSONObject receipt = new JSONObject(FilesUtil.readString(new File(directory,"receipt.json").toPath()));
         if (!expected.equals(receipt.optString("editable_mesh_sha256")) || !expected.equals(FilesUtil.hash(mesh))) {
             throw new IOException("Base geometry checksum does not match");
         }
@@ -496,7 +496,7 @@ public final class ProductionService extends Service {
         if (!mesh.isFile() || (HULL.equals(kind) || PART_HULL.equals(kind) || DEPTH.equals(kind) || VOLUME.equals(kind)) && !metrics.isFile()) return null;
         try {
             JSONObject evidence = metrics.isFile()
-                    ? new JSONObject(Files.readString(metrics.toPath())) : new JSONObject();
+                    ? new JSONObject(FilesUtil.readString(metrics.toPath())) : new JSONObject();
             if ((HULL.equals(kind)||PART_HULL.equals(kind)) && !evidence.has("texture_sha256")) return null;
             if (PART_HULL.equals(kind)&&!PartHull.METHOD.equals(evidence.optString("method"))) return null;
             if (VOLUME.equals(kind) && (!TripoModels.VERSION.equals(evidence.optString("model_pack"))
@@ -687,7 +687,7 @@ public final class ProductionService extends Service {
         File cache = new File(store.root,"cache/pose-v1-" + source.getName() + "-" + PoseModel.SHA256 + ".json");
         if (cache.isFile()) {
             try {
-                JSONObject saved = new JSONObject(Files.readString(cache.toPath()));
+                JSONObject saved = new JSONObject(FilesUtil.readString(cache.toPath()));
                 if (source.getName().equals(saved.getString("source_sha256"))
                         && PoseModel.SHA256.equals(saved.getString("model_sha256"))) {
                     return saved.put("reused",true);
