@@ -665,8 +665,8 @@ void create(){
       } catch (Exception failure) { error(failure); }
      });
      if (motion != null) {
-      String editable = motionScript;
-      button("Edit animation tracks", () -> motionDialog(id,baseSha,editable));
+      String savedMotionScript = motionScript;
+      button("Edit animation tracks", () -> motionDialog(id,baseSha,savedMotionScript));
      }
     }
    }
