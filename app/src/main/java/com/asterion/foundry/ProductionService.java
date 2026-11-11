@@ -186,6 +186,12 @@ public final class ProductionService extends Service {
                 || ASSEMBLY.equals(kind) ? base(request) : null;
         Base partner = ASSEMBLY.equals(kind) ? base(request.getString("partner"),request.getString("partner_mesh_sha256"))
                 : PART_REPLACEMENT.equals(kind) ? base(request.getString("donor"),request.getString("donor_mesh_sha256")) : null;
+        if(base!=null){
+            String parentState=store.job(request.getString("parent")).getString("state");
+            String partnerState=partner==null?"":store.job(request.getString(
+                    PART_REPLACEMENT.equals(kind)?"donor":"partner")).getString("state");
+            candidateOnly=AssetStagePolicy.candidate(candidateOnly,parentState,partnerState);
+        }
         if (PART_REPLACEMENT.equals(kind) && !base.textureSha().equals(partner.textureSha()))
             throw new IOException("Part geometry donors must use the same base-colour atlas (or both have none)");
         if (base != null) {
@@ -634,9 +640,7 @@ public final class ProductionService extends Service {
     }
 
     private Base base(String parent,String expected) throws Exception {
-        if (!"complete".equals(store.job(parent).getString("state"))) {
-            throw new IOException("The base must be a completed editable project");
-        }
+        AssetStagePolicy.requireEditable(store.job(parent).getString("state"));
         File directory = store.project(parent);
         File mesh = new File(directory,"checkpoint.mesh");
         JSONObject receipt = new JSONObject(FilesUtil.readString(new File(directory,"receipt.json").toPath()));
