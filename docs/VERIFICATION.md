@@ -158,3 +158,57 @@ Not accepted:
   graphics quality, material or NoWorld native acceptance was established.
 - The full owner scope in `docs/SCOPE.md` and all roadmap completion gates
   remain open. This is a bounded engineering increment, not the complete app.
+
+## 2026-11-11 — v0.5.1 part-surface and interruption-recovery increment
+
+Active branch: `work/staged-production-quality-20261111`.
+Signed APK source commit: `b3d417c0985259f4404d83bffbc264ff3673f544`.
+Signed APK publishing commit: `befe94a075bfa45234dc61eb8f3ef0ff105cb92d`.
+Published file: `dist/AsterionFoundry-v0.5.1-PRODUCTION-DEV.apk`.
+Version code **6**; version name `0.5.1-part-surfaces-recovery`; package
+`com.asterion.foundry`; SHA-256
+`30d35b39063453baa034b902b3bcc8bf60aa87f22fdc3cff1b3ec5a0c090703d`;
+file size **77,395,437 bytes**.
+
+The Windows Asterion Control worker `LAPTOP-1LI4VRCJ` compiled the precise
+source commit with the preserved project environment; host geometry,
+part-surface, form, skin, rig, motion, exported GLB, and staged quality
+regressions passed. The build script reported APK v3 signature verification,
+alignment, embedded model/notice/JNI verification and the SHA above.
+A direct `apksigner --print-certs` comparison with the previous signed v0.5
+APK found the identical signer certificate SHA-256:
+`9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`.
+The original signed v0.5 file remains published and unchanged.
+
+GitHub Actions run
+[43017024386](https://github.com/Azrazieliz/Asterion-3d/actions/runs/43017024386)
+passed its host regression and `compileDebugJavaWithJavac` jobs for the
+identical source tree. This Android-aware compilation uncovered and then
+resolved 13 Java API incompatibilities and one checked JSON exception
+introduced by the new UI. The Android CI job does not sign, install or test
+an APK.
+
+Implemented production improvements:
+- `PartSurface`: exact named-part vertex-colour editing with bounded strength,
+  separate editable child project and retained base texture and skin/geometry.
+  See [part-surface details](PART_SURFACE_REVISIONS.md).
+- `Store` and `ProductionService`: unexpected-process-interruption marker,
+  selective foreground-reentry requeue, and saved stage checksum verification
+  before accepting resumed evidence. See
+  [process-interruption limits](PROCESS_INTERRUPTION_RECOVERY.md).
+- Existing M0–M7 scope and acceptance are unchanged.
+
+Remaining evidence:
+- Samsung SM-S948B was paired and reachable via the authorized native Control
+  device connection, but **v0.5.1 installation, version upgrade, interactive
+  part-editing and forced-process-restart validation have not been observed**.
+  The retained Windows `adb devices -l` returned no attached devices. The
+  native Android foreground UI was unrelated to Foundry, so connection and
+  native input acknowledgments must not be used as app acceptance.
+- Build tools continue to emit `zip WARNING: header mismatch` messages
+  despite successful final integrity/signature checks. Warning root cause is
+  still open.
+- Texture painting, separate PBR stacks, identity/pose and reference fidelity,
+  complete rig deformation, autonomous animation, source-exact Koikatsu
+  conversion, NoWorld native/Unreal admission, sustained phone thermal/runtime
+  and release-grade visual checks remain **unverified or incomplete**.
